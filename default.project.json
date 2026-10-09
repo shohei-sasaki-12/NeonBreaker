@@ -4,26 +4,40 @@
     "$className": "DataModel",
 
     "ReplicatedStorage": {
+      "Remotes": {
+        "$className": "Folder"
+      },
       "Shared": {
         "$path": "src/shared"
+      },
+      "Assets": {
+        "$className": "Folder"
       }
     },
 
     "ServerScriptService": {
-      "Server": {
-        "$path": "src/server"
-      }
+      "$path": "src/server"
     },
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "Client": {
-          "$path": "src/client"
-        }
+        "$path": "src/client"
       }
     },
 
     "Workspace": {
+      "EnemyContainer": {
+        "$className": "Folder"
+      },
+      "ProjectileContainer": {
+        "$className": "Folder"
+      },
+      "EffectContainer": {
+        "$className": "Folder"
+      },
+      "SpawnPoints": {
+        "$className": "Folder"
+      },
       "$properties": {
         "FilteringEnabled": true
       },
