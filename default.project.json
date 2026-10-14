@@ -5,7 +5,13 @@
 
     "ReplicatedStorage": {
       "Remotes": {
-        "$className": "Folder"
+        "$className": "Folder",
+        "Combat": {
+          "$className": "Folder",
+          "FireWeapon": {
+            "$className": "RemoteEvent"
+          }
+        }
       },
       "Shared": {
         "$path": "src/shared"
