@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local Workspace = game:GetService("Workspace")
+local InputController = require(script.Parent:WaitForChild("InputController"))
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("CameraConfig"))
 local RENDER_BINDING = "NeonBreakerCamera"
@@ -88,10 +89,6 @@ local function Update(deltaTime: number)
 		local delta = UserInputService:GetMouseDelta()
 		yaw = (yaw - math.rad(delta.X * Config.MouseSensitivity)) % (2 * math.pi)
 		pitch = math.clamp(pitch - math.rad(delta.Y * Config.MouseSensitivity), math.rad(Config.MinPitch), math.rad(Config.MaxPitch))
-		-- Also clear ADS if a release occurred while the window was unfocused.
-		if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-			aiming = false
-		end
 	end
 
 	local alpha = 1 - math.exp(-Config.TransitionSpeed * deltaTime)
@@ -126,15 +123,8 @@ function CameraController.Init()
 	savedMouseBehavior = UserInputService.MouseBehavior
 	savedMouseIconEnabled = UserInputService.MouseIconEnabled
 
-	table.insert(connections, UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
-		if input.UserInputType == Enum.UserInputType.MouseButton2 and not processed and not InputBlocked() then
-			aiming = true
-		end
-	end))
-	table.insert(connections, UserInputService.InputEnded:Connect(function(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			aiming = false
-		end
+	table.insert(connections, InputController.Aim:Connect(function(isHeld: boolean)
+		aiming = isHeld and not InputBlocked()
 	end))
 	table.insert(connections, UserInputService.WindowFocusReleased:Connect(function()
 		focused = false
