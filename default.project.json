@@ -10,6 +10,12 @@
           "$className": "Folder",
           "FireWeapon": {
             "$className": "RemoteEvent"
+          },
+          "ReloadWeapon": {
+            "$className": "RemoteEvent"
+          },
+          "WeaponStateChanged": {
+            "$className": "RemoteEvent"
           }
         }
       },

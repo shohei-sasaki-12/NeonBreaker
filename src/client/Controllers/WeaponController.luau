@@ -16,6 +16,7 @@ export type WeaponState = {
 	Ammo: number,
 	MagazineSize: number,
 	IsReloading: boolean,
+	Ready: boolean,
 }
 
 export type ShotInfo = {
@@ -33,10 +34,17 @@ local WeaponController = {
 }
 local connections: { RBXScriptConnection } = {}
 local fireRemote: RemoteEvent? = nil
+local reloadRemote: RemoteEvent? = nil
+local stateRemote: RemoteEvent? = nil
 local started = false
+local ready = false
 local fireHeld = false
 local ammo = config.MagazineSize
-local reloadEndsAt: number? = nil
+local isReloading = false
+local pendingShots: { [number]: boolean } = {}
+local pendingReloadId: number? = nil
+local reloadId = 0
+local latestRevision = 0
 local nextShotAt = 0
 local shotId = 0 -- Monotonic across respawns and Init/Destroy cycles.
 
@@ -46,7 +54,8 @@ function WeaponController.GetState(): WeaponState
 		WeaponId = config.WeaponId,
 		Ammo = ammo,
 		MagazineSize = config.MagazineSize,
-		IsReloading = reloadEndsAt ~= nil,
+		IsReloading = isReloading,
+		Ready = ready,
 	})
 end
 
@@ -62,35 +71,48 @@ end
 
 local function CancelActions()
 	fireHeld = false
-	if reloadEndsAt ~= nil then
-		reloadEndsAt = nil
+	pendingReloadId = nil
+	if isReloading or ready then
+		isReloading = false
+		ready = false
 		NotifyState()
 	end
 end
 
 local function ResetWeapon()
 	fireHeld = false
-	reloadEndsAt = nil
+	isReloading = false
+	ready = false
+	pendingReloadId = nil
+	table.clear(pendingShots)
 	ammo = config.MagazineSize
 	nextShotAt = 0
 	NotifyState()
+	local remote = stateRemote
+	if remote then
+		remote:FireServer()
+	end
 end
 
-local function StartReload(now: number)
-	if not started or not IsAlive() or reloadEndsAt ~= nil or ammo >= config.MagazineSize then
+local function StartReload()
+	local remote = reloadRemote
+	if not started or not ready or not remote or not IsAlive() or isReloading or ammo >= config.MagazineSize then
 		return
 	end
-	-- Local prediction only. Server-authoritative ammo/reload is a later step.
-	reloadEndsAt = now + config.ReloadTime
+	-- Predict the start only; ammunition is refilled by a server snapshot.
+	reloadId += 1
+	pendingReloadId = reloadId
+	isReloading = true
 	NotifyState()
+	remote:FireServer(config.WeaponId, reloadId)
 end
 
 local function TryFire(now: number)
-	if not started or not fireHeld or reloadEndsAt ~= nil or not IsAlive() then
+	if not started or not ready or not fireHeld or isReloading or not IsAlive() then
 		return
 	end
 	if ammo <= 0 then
-		StartReload(now)
+		StartReload()
 		return
 	end
 	if now < nextShotAt then
@@ -111,6 +133,7 @@ local function TryFire(now: number)
 	nextShotAt = now + config.FireInterval
 	ammo -= 1
 	shotId += 1
+	pendingShots[shotId] = true
 	remote:FireServer(config.WeaponId, ray.Origin, direction, shotId)
 	local shot: ShotInfo = {
 		WeaponId = config.WeaponId,
@@ -128,13 +151,41 @@ local function Update()
 		return
 	end
 	local now = os.clock()
-	local deadline = reloadEndsAt
-	if deadline ~= nil and now >= deadline then
-		reloadEndsAt = nil
-		ammo = config.MagazineSize
-		NotifyState()
-	end
 	TryFire(now)
+end
+
+type ServerState = {
+	Character: Model?,
+	WeaponId: string,
+	Ammo: number,
+	IsReloading: boolean,
+	AckShotId: number,
+	AckReloadId: number,
+	Revision: number,
+}
+
+local function OnServerState(state: ServerState)
+	if not started or state.Character ~= Players.LocalPlayer.Character or state.Character == nil
+		or state.WeaponId ~= config.WeaponId or state.Revision <= latestRevision then
+		return
+	end
+	latestRevision = state.Revision
+	local unacknowledged = 0
+	for id in pendingShots do
+		if id <= state.AckShotId then
+			pendingShots[id] = nil
+		else
+			unacknowledged += 1
+		end
+	end
+	-- Preserve predictions made after this snapshot's acknowledgement.
+	ammo = math.max(0, state.Ammo - unacknowledged)
+	if pendingReloadId ~= nil and state.AckReloadId >= pendingReloadId then
+		pendingReloadId = nil
+	end
+	isReloading = state.IsReloading or pendingReloadId ~= nil
+	ready = true
+	NotifyState()
 end
 
 function WeaponController.Init()
@@ -142,15 +193,21 @@ function WeaponController.Init()
 		return
 	end
 	assert(RunService:IsClient(), "WeaponController must run on the client")
-	local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Combat"):WaitForChild("FireWeapon")
-	assert(remote:IsA("RemoteEvent"), "Combat.FireWeapon must be a RemoteEvent")
+	local remotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Combat")
+	local remote = remotes:WaitForChild("FireWeapon")
+	local reload = remotes:WaitForChild("ReloadWeapon")
+	local snapshot = remotes:WaitForChild("WeaponStateChanged")
+	assert(remote:IsA("RemoteEvent") and reload:IsA("RemoteEvent") and snapshot:IsA("RemoteEvent"), "Combat remotes must be RemoteEvents")
 	-- WaitForChild can yield; guard against simultaneous Init calls.
 	if started then
 		return
 	end
 	fireRemote = remote
+	reloadRemote = reload
+	stateRemote = snapshot
 	started = true
-	ResetWeapon()
+	latestRevision = 0
+	table.insert(connections, snapshot.OnClientEvent:Connect(OnServerState))
 	table.insert(connections, InputController.FirePressed:Connect(function()
 		if not IsAlive() then
 			return
@@ -161,12 +218,11 @@ function WeaponController.Init()
 	table.insert(connections, InputController.FireReleased:Connect(function()
 		fireHeld = false
 	end))
-	table.insert(connections, InputController.Reload:Connect(function()
-		StartReload(os.clock())
-	end))
+	table.insert(connections, InputController.Reload:Connect(StartReload))
 	table.insert(connections, Players.LocalPlayer.CharacterRemoving:Connect(CancelActions))
 	table.insert(connections, Players.LocalPlayer.CharacterAdded:Connect(ResetWeapon))
 	table.insert(connections, RunService.Heartbeat:Connect(Update))
+	ResetWeapon()
 end
 
 function WeaponController.Destroy()
@@ -179,7 +235,10 @@ function WeaponController.Destroy()
 	end
 	table.clear(connections)
 	CancelActions()
+	table.clear(pendingShots)
 	fireRemote = nil
+	reloadRemote = nil
+	stateRemote = nil
 	-- Keep notification objects stable for a later Init().
 end
 
