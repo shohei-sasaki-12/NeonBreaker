@@ -176,6 +176,25 @@ local function AddPlayer(player: Player)
 	end
 end
 
+-- Server-only entry point for enemy attacks. No damage Remote is exposed.
+function CombatService.ApplyEnemyDamage(player: Player, amount: number): boolean
+	assert(RunService:IsServer(), "Enemy damage must run on the server")
+	if not started or not Validation.IsFinite(amount) or amount <= 0 then
+		return false
+	end
+	local state = states[player]
+	if not state or not Validation.GetLivingRoot(player, state.Character) then
+		return false
+	end
+	local character = state.Character :: Model
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return false
+	end
+	humanoid:TakeDamage(amount)
+	return true
+end
+
 function CombatService.Init()
 	if started then
 		return

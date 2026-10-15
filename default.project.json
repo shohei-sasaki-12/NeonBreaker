@@ -27,6 +27,12 @@
       }
     },
 
+    "ServerStorage": {
+      "EnemyModels": {
+        "$path": "src/serverStorage/EnemyModels"
+      }
+    },
+
     "ServerScriptService": {
       "$path": "src/server"
     },
