@@ -44,6 +44,9 @@
     },
 
     "Workspace": {
+      "ExperienceOrbs": {
+        "$className": "Folder"
+      },
       "EnemyContainer": {
         "$className": "Folder"
       },

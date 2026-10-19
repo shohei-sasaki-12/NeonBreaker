@@ -18,6 +18,7 @@ type EnemyRecord = {
 	EnemyId: string,
 	Health: number,
 	Dead: boolean,
+	ExperienceReward: number,
 	Connections: { RBXScriptConnection },
 }
 
@@ -31,6 +32,8 @@ local heartbeat: RBXScriptConnection? = nil
 local started = false
 local nextUpdateAt = 0
 local EnemyService = {}
+type OrbSpawner = (position: Vector3, experience: number) -> Part?
+local spawnExperienceOrb: OrbSpawner? = nil
 
 local function StopAI(record: EnemyRecord)
 	if record.Active then
@@ -58,11 +61,16 @@ local function FinishDeath(model: Model, record: EnemyRecord, attacker: Player?)
 	-- Commit death before Health/Died/ancestry callbacks can re-enter this path.
 	record.Dead = true
 	record.Health = 0
+	local deathPosition = model:GetPivot().Position
 	StopTracking(model)
 	record.Humanoid.Health = 0
 	local credit = if attacker then " by " .. attacker.Name else ""
 	print("[EnemyService] Defeated " .. record.EnemyId .. credit)
 	model:Destroy()
+	local spawnOrb = spawnExperienceOrb
+	if spawnOrb and record.ExperienceReward > 0 then
+		spawnOrb(deathPosition, record.ExperienceReward)
+	end
 	return true
 end
 
@@ -130,7 +138,7 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	local ai = factory(model, config, CombatService.ApplyEnemyDamage)
 	local record: EnemyRecord = {
 		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId,
-		Health = config.MaxHP, Dead = false, Connections = {},
+		Health = config.MaxHP, Dead = false, ExperienceReward = config.ExperienceReward, Connections = {},
 	}
 	records[model] = record
 	table.insert(record.Connections, humanoid.Died:Connect(function()
@@ -152,11 +160,12 @@ function EnemyService.DespawnEnemy(model: Model)
 	model:Destroy()
 end
 
-function EnemyService.Init()
+function EnemyService.Init(spawnOrb: OrbSpawner)
 	if started then
 		return
 	end
 	assert(RunService:IsServer(), "EnemyService must run on the server")
+	assert(typeof(spawnOrb) == "function", "EnemyService requires an experience orb spawner")
 	local destination = Workspace:WaitForChild("EnemyContainer")
 	local source = ServerStorage:WaitForChild("EnemyModels")
 	assert(destination:IsA("Folder") and source:IsA("Folder"), "Enemy containers must be Folders")
@@ -166,6 +175,7 @@ function EnemyService.Init()
 	container = destination
 	templates = source
 	started = true
+	spawnExperienceOrb = spawnOrb
 	nextUpdateAt = 0
 	heartbeat = RunService.Heartbeat:Connect(function()
 		local now = os.clock()
@@ -199,6 +209,7 @@ function EnemyService.Destroy()
 	end
 	container = nil
 	templates = nil
+	spawnExperienceOrb = nil
 end
 
 return EnemyService
