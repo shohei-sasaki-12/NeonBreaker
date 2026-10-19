@@ -15,6 +15,9 @@ type EnemyRecord = {
 	AI: MeleeAI.Controller,
 	Humanoid: Humanoid,
 	Active: boolean,
+	EnemyId: string,
+	Health: number,
+	Dead: boolean,
 	Connections: { RBXScriptConnection },
 }
 
@@ -46,6 +49,44 @@ local function StopTracking(model: Model)
 	for _, connection in record.Connections do
 		connection:Disconnect()
 	end
+end
+
+local function FinishDeath(model: Model, record: EnemyRecord, attacker: Player?): boolean
+	if record.Dead or records[model] ~= record then
+		return false
+	end
+	-- Commit death before Health/Died/ancestry callbacks can re-enter this path.
+	record.Dead = true
+	record.Health = 0
+	StopTracking(model)
+	record.Humanoid.Health = 0
+	local credit = if attacker then " by " .. attacker.Name else ""
+	print("[EnemyService] Defeated " .. record.EnemyId .. credit)
+	model:Destroy()
+	return true
+end
+
+function EnemyService.ApplyDamage(model: Model, amount: number, attacker: Player?): boolean
+	assert(RunService:IsServer(), "Enemy damage must run on the server")
+	local record = records[model]
+	local destination = container
+	if not started or not record or record.Dead or not destination
+		or not model:IsDescendantOf(destination) or not CollectionService:HasTag(model, "Enemy")
+		or amount ~= amount or amount <= 0 or amount == math.huge then
+		return false
+	end
+	-- Only this service writes gameplay HP; Humanoid.Health mirrors the server value.
+	if record.Humanoid.Health <= 0 or record.Health <= 0 then
+		FinishDeath(model, record, nil)
+		return false
+	end
+	record.Health = math.max(0, record.Health - amount)
+	if record.Health <= 0 then
+		FinishDeath(model, record, attacker)
+	else
+		record.Humanoid.Health = record.Health
+	end
+	return true
 end
 
 function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
@@ -87,11 +128,13 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	root:SetNetworkOwner(nil)
 	CollectionService:AddTag(model, "Enemy")
 	local ai = factory(model, config, CombatService.ApplyEnemyDamage)
-	local record: EnemyRecord = { AI = ai, Humanoid = humanoid, Active = true, Connections = {} }
+	local record: EnemyRecord = {
+		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId,
+		Health = config.MaxHP, Dead = false, Connections = {},
+	}
 	records[model] = record
 	table.insert(record.Connections, humanoid.Died:Connect(function()
-		-- Stop AI only; kill rewards and corpse removal belong to the next step.
-		StopAI(record)
+		FinishDeath(model, record, nil)
 	end))
 	table.insert(record.Connections, model.AncestryChanged:Connect(function()
 		if not model:IsDescendantOf(destination) then
@@ -134,7 +177,7 @@ function EnemyService.Init()
 			if not model:IsDescendantOf(destination) then
 				StopTracking(model)
 			elseif record.Humanoid.Health <= 0 then
-				StopAI(record)
+				FinishDeath(model, record, nil)
 			elseif record.Active then
 				record.AI.Update(now)
 			end

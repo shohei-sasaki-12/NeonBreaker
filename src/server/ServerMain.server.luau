@@ -4,7 +4,8 @@
 local CombatService = require(script.Parent:WaitForChild("Services"):WaitForChild("CombatService"))
 local EnemyService = require(script.Parent:WaitForChild("Services"):WaitForChild("EnemyService"))
 
-CombatService.Init()
+-- Wire service communication here to avoid mutual require dependencies.
+CombatService.Init(EnemyService.ApplyDamage)
 EnemyService.Init()
 
 print("Server initialization complete")

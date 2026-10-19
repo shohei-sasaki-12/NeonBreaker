@@ -1,6 +1,7 @@
 --!strict
 
 local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -28,6 +29,19 @@ local states: { [Player]: PlayerWeapon } = {}
 local connections: { RBXScriptConnection } = {}
 local stateRemote: RemoteEvent? = nil
 local started = false
+type EnemyDamageHandler = (model: Model, amount: number, attacker: Player) -> boolean
+local damageEnemy: EnemyDamageHandler? = nil
+
+local function FindEnemyModel(instance: Instance): Model?
+	local current: Instance? = instance
+	while current and current ~= Workspace do
+		if current:IsA("Model") and CollectionService:HasTag(current, "Enemy") then
+			return current
+		end
+		current = current.Parent
+	end
+	return nil
+end
 
 local function SendState(player: Player, state: PlayerWeapon)
 	local remote = stateRemote
@@ -114,6 +128,13 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 	if hit and Config.LogHits then
 		print(string.format("[CombatService] %s hit %s (shot %d)", player.Name, hit.Instance.Name, shotId))
 	end
+	if hit then
+		local enemy = FindEnemyModel(hit.Instance)
+		local applyDamage = damageEnemy
+		if enemy and applyDamage then
+			applyDamage(enemy, config.Damage, player)
+		end
+	end
 	SendState(player, state)
 end
 
@@ -195,11 +216,12 @@ function CombatService.ApplyEnemyDamage(player: Player, amount: number): boolean
 	return true
 end
 
-function CombatService.Init()
+function CombatService.Init(applyEnemyDamage: EnemyDamageHandler)
 	if started then
 		return
 	end
 	assert(RunService:IsServer(), "CombatService must run on the server")
+	assert(typeof(applyEnemyDamage) == "function", "CombatService requires an enemy damage handler")
 	local remotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Combat")
 	local fire = remotes:WaitForChild("FireWeapon")
 	local reload = remotes:WaitForChild("ReloadWeapon")
@@ -209,6 +231,7 @@ function CombatService.Init()
 		return
 	end
 	started = true
+	damageEnemy = applyEnemyDamage
 	stateRemote = snapshot
 	table.insert(connections, Players.PlayerAdded:Connect(AddPlayer))
 	table.insert(connections, Players.PlayerRemoving:Connect(RemovePlayer))
@@ -245,6 +268,7 @@ function CombatService.Destroy()
 		RemovePlayer(player)
 	end
 	stateRemote = nil
+	damageEnemy = nil
 end
 
 return CombatService
