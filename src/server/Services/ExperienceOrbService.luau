@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("ExperienceOrbConfig"))
-local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
+local ProgressionService = require(script.Parent:WaitForChild("ProgressionService"))
 
 type Target = { Player: Player, Character: Model, Root: BasePart }
 type Orb = { Experience: number, Target: Target?, Claimed: boolean }
@@ -67,7 +67,7 @@ local function Collect(part: Part, orb: Orb, target: Target)
 	-- Claim/remove before XP notifications can re-enter the update loop.
 	orb.Claimed = true
 	orbs[part] = nil
-	if PlayerStateService.AddExperience(target.Player, orb.Experience) then
+	if ProgressionService.AddExperience(target.Player, orb.Experience) then
 		part:Destroy()
 	elseif started and container and part:IsDescendantOf(container) then
 		-- A player who left cannot consume an orb without receiving its XP.

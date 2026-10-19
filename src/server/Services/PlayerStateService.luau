@@ -2,8 +2,10 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("ProgressionConfig"))
 
-export type PlayerState = { CurrentXP: number }
+export type PlayerState = { Level: number, CurrentXP: number, RequiredXP: number }
 
 local states: { [Player]: PlayerState } = {}
 local connections: { RBXScriptConnection } = {}
@@ -11,35 +13,58 @@ local experienceChanged = Instance.new("BindableEvent")
 local started = false
 local PlayerStateService = { ExperienceChanged = experienceChanged.Event }
 
+local function PublishState(player: Player, state: PlayerState)
+	-- Display/debug mirrors only. Clients cannot grant XP through attributes.
+	player:SetAttribute("Level", state.Level)
+	player:SetAttribute("CurrentXP", state.CurrentXP)
+	player:SetAttribute("RequiredXP", state.RequiredXP)
+end
+
 local function AddPlayer(player: Player)
 	if not states[player] then
-		states[player] = { CurrentXP = 0 }
-		-- Display/debug mirror only. The private server table is authoritative.
-		player:SetAttribute("CurrentXP", 0)
+		local state: PlayerState = {
+			Level = Config.InitialLevel,
+			CurrentXP = 0,
+			RequiredXP = Config.GetRequiredXP(Config.InitialLevel),
+		}
+		states[player] = state
+		PublishState(player, state)
 	end
 end
 
 local function RemovePlayer(player: Player)
 	states[player] = nil
+	player:SetAttribute("Level", nil)
 	player:SetAttribute("CurrentXP", nil)
+	player:SetAttribute("RequiredXP", nil)
 end
 
 function PlayerStateService.GetState(player: Player): PlayerState?
 	local state = states[player]
-	return if state then table.freeze({ CurrentXP = state.CurrentXP }) else nil
+	return if state then table.freeze({ Level = state.Level, CurrentXP = state.CurrentXP, RequiredXP = state.RequiredXP }) else nil
 end
 
-function PlayerStateService.AddExperience(player: Player, amount: number): boolean
-	assert(RunService:IsServer(), "XP must be granted on the server")
+-- Server-only commit API. XP grants go through ProgressionService.AddExperience.
+function PlayerStateService.UpdateProgression(player: Player, level: number, currentXP: number, amount: number): boolean
+	assert(RunService:IsServer(), "Progression state must be updated on the server")
 	local state = states[player]
 	if not started or not state or player.Parent ~= Players
 		or amount ~= amount or amount <= 0 or amount == math.huge or amount % 1 ~= 0
-		or state.CurrentXP + amount > 9007199254740991 then
+		or level ~= level or level < state.Level or level == math.huge or level % 1 ~= 0
+		or currentXP ~= currentXP or currentXP < 0 or currentXP == math.huge or currentXP % 1 ~= 0 then
 		return false
 	end
-	state.CurrentXP += amount
-	player:SetAttribute("CurrentXP", state.CurrentXP)
-	experienceChanged:Fire(player, state.CurrentXP, amount)
+	local requiredXP = Config.GetRequiredXP(level)
+	if currentXP >= requiredXP then
+		return false
+	end
+	state.Level = level
+	state.CurrentXP = currentXP
+	state.RequiredXP = requiredXP
+	local snapshot = table.freeze({ Level = level, CurrentXP = currentXP, RequiredXP = requiredXP })
+	PublishState(player, snapshot)
+	-- Keep the original first three arguments; append the committed snapshot.
+	experienceChanged:Fire(player, currentXP, amount, snapshot)
 	return true
 end
 
