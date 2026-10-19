@@ -31,7 +31,7 @@ raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 raycastParams.RespectCanCollide = true
 
 local function InputBlocked(): boolean
-	return not focused or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() ~= nil
+	return InputController.IsUIBlocked() or not focused or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() ~= nil
 end
 
 local function ReleaseMouse()

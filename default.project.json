@@ -42,6 +42,18 @@
       "$path": "src/server"
     },
 
+    "StarterGui": {
+      "LevelUpUI": {
+        "$className": "ScreenGui",
+        "$properties": {
+          "Enabled": false,
+          "ResetOnSpawn": false,
+          "DisplayOrder": 20,
+          "ZIndexBehavior": "Sibling"
+        }
+      }
+    },
+
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "$path": "src/client"

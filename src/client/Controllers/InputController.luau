@@ -39,6 +39,11 @@ local focused = true
 local firing = false
 local aiming = false
 local interacting = false
+local uiBlocked = false
+
+function InputController.IsUIBlocked(): boolean
+	return uiBlocked
+end
 
 local function ReleaseHeldInputs()
 	if firing then
@@ -57,7 +62,7 @@ local function ReleaseHeldInputs()
 end
 
 local function OnInputBegan(input: InputObject, processed: boolean)
-	if processed or not focused or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() ~= nil then
+	if uiBlocked or processed or not focused or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() ~= nil then
 		return
 	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -102,6 +107,13 @@ local function OnInputEnded(input: InputObject)
 			interacting = false
 			events.Interact:Fire(false)
 		end
+	end
+end
+
+function InputController.SetUIBlocked(blocked: boolean)
+	uiBlocked = blocked
+	if blocked then
+		ReleaseHeldInputs()
 	end
 end
 
