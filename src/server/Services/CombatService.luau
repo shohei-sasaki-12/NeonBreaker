@@ -6,7 +6,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local ConfigFolder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
-local WeaponConfig = require(ConfigFolder:WaitForChild("WeaponConfig"))
+local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
+local WeaponStats = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("WeaponStats"))
 local Config = require(ConfigFolder:WaitForChild("CombatConfig"))
 local Validation = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("CombatValidation"))
 
@@ -43,16 +44,26 @@ local function FindEnemyModel(instance: Instance): Model?
 	return nil
 end
 
+local function GetWeaponConfig(player: Player, weaponId: string)
+	local playerState = PlayerStateService.GetState(player)
+	return WeaponStats.GetWeaponConfig(weaponId, if playerState then playerState.Upgrades else {})
+end
+
 local function SendState(player: Player, state: PlayerWeapon)
 	local remote = stateRemote
 	if not remote then
 		return
 	end
 	state.Revision += 1
+	local weapon = GetWeaponConfig(player, state.WeaponId)
+	assert(weapon, "Equipped weapon is missing from WeaponConfig")
 	remote:FireClient(player, {
 		Character = state.Character,
 		WeaponId = state.WeaponId,
 		Ammo = state.Ammo,
+		MagazineSize = weapon.MagazineSize,
+		FireInterval = weapon.FireInterval,
+		Damage = weapon.Damage,
 		IsReloading = state.ReloadEndsAt ~= nil,
 		AckShotId = state.LastShotId,
 		AckReloadId = state.LastReloadId,
@@ -83,7 +94,7 @@ local function UpdateReload(player: Player, state: PlayerWeapon, now: number)
 		state.ReloadEndsAt = nil
 		SendState(player, state)
 	elseif now >= deadline then
-		local config = WeaponConfig.GetWeaponConfig(state.WeaponId)
+		local config = GetWeaponConfig(player, state.WeaponId)
 		assert(config, "Equipped weapon is missing from WeaponConfig")
 		state.ReloadEndsAt = nil
 		state.Ammo = config.MagazineSize
@@ -100,7 +111,7 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 	UpdateReload(player, state, now)
 	state.LastShotId = shotId
 	local root = Validation.GetLivingRoot(player, state.Character)
-	local config = if typeof(weaponId) == "string" then WeaponConfig.GetWeaponConfig(weaponId) else nil
+	local config = if typeof(weaponId) == "string" then GetWeaponConfig(player, weaponId) else nil
 	if not root or weaponId ~= state.WeaponId or not config
 		or state.ReloadEndsAt ~= nil or state.Ammo <= 0 or now + Config.FireTimingTolerance < state.NextShotAt
 		or not Validation.IsVector(origin) or not Validation.IsDirection(direction)
@@ -146,7 +157,7 @@ local function OnReload(player: Player, weaponId: any, reloadId: any)
 	end
 	UpdateReload(player, state, now)
 	state.LastReloadId = reloadId
-	local config = if typeof(weaponId) == "string" then WeaponConfig.GetWeaponConfig(weaponId) else nil
+	local config = if typeof(weaponId) == "string" then GetWeaponConfig(player, weaponId) else nil
 	if Validation.GetLivingRoot(player, state.Character) and config and weaponId == state.WeaponId
 		and state.ReloadEndsAt == nil and state.Ammo < config.MagazineSize then
 		state.ReloadEndsAt = now + config.ReloadTime
@@ -168,7 +179,7 @@ local function AddPlayer(player: Player)
 	if states[player] then
 		return
 	end
-	local config = WeaponConfig.GetWeaponConfig(Config.DefaultWeaponId)
+	local config = GetWeaponConfig(player, Config.DefaultWeaponId)
 	assert(config, "Default weapon is missing from WeaponConfig")
 	local state: PlayerWeapon = {
 		Character = nil, WeaponId = config.WeaponId, Ammo = config.MagazineSize,
@@ -176,11 +187,13 @@ local function AddPlayer(player: Player)
 		Revision = 0, Tokens = Config.RemoteBurstSize, TokenTime = os.clock(), Connections = {},
 	}
 	states[player] = state
-	-- Until PlayerStateService exists, CombatService owns the default equipment.
+	-- Equipment stays in CombatService; upgrades live in PlayerStateService.
 	local function OnCharacterAdded(character: Model)
 		state.Character = character
 		state.WeaponId = config.WeaponId
-		state.Ammo = config.MagazineSize
+		local weapon = GetWeaponConfig(player, state.WeaponId)
+		assert(weapon, "Equipped weapon is missing from WeaponConfig")
+		state.Ammo = weapon.MagazineSize
 		state.ReloadEndsAt = nil
 		state.NextShotAt = 0
 		SendState(player, state)
@@ -240,6 +253,13 @@ function CombatService.Init(applyEnemyDamage: EnemyDamageHandler)
 	end
 	table.insert(connections, fire.OnServerEvent:Connect(OnFire))
 	table.insert(connections, reload.OnServerEvent:Connect(OnReload))
+	table.insert(connections, PlayerStateService.UpgradeChanged:Connect(function(player: Player)
+		local state = states[player]
+		if state then
+			-- Capacity changes do not grant free ammunition; the next reload fills it.
+			SendState(player, state)
+		end
+	end))
 	-- A client can request a snapshot, but never supplies state values.
 	table.insert(connections, snapshot.OnServerEvent:Connect(function(player: Player)
 		local state = AllowRequest(player, os.clock())

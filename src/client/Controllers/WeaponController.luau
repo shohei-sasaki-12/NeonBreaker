@@ -15,6 +15,8 @@ export type WeaponState = {
 	WeaponId: string,
 	Ammo: number,
 	MagazineSize: number,
+	FireInterval: number,
+	Damage: number,
 	IsReloading: boolean,
 	Ready: boolean,
 }
@@ -40,6 +42,9 @@ local started = false
 local ready = false
 local fireHeld = false
 local ammo = config.MagazineSize
+local magazineSize = config.MagazineSize
+local fireInterval = config.FireInterval
+local damage = config.Damage
 local isReloading = false
 local pendingShots: { [number]: boolean } = {}
 local pendingReloadId: number? = nil
@@ -53,7 +58,9 @@ function WeaponController.GetState(): WeaponState
 	return table.freeze({
 		WeaponId = config.WeaponId,
 		Ammo = ammo,
-		MagazineSize = config.MagazineSize,
+		MagazineSize = magazineSize,
+		FireInterval = fireInterval,
+		Damage = damage,
 		IsReloading = isReloading,
 		Ready = ready,
 	})
@@ -85,7 +92,7 @@ local function ResetWeapon()
 	ready = false
 	pendingReloadId = nil
 	table.clear(pendingShots)
-	ammo = config.MagazineSize
+	ammo = magazineSize
 	nextShotAt = 0
 	NotifyState()
 	local remote = stateRemote
@@ -96,7 +103,7 @@ end
 
 local function StartReload()
 	local remote = reloadRemote
-	if not started or not ready or not remote or not IsAlive() or isReloading or ammo >= config.MagazineSize then
+	if not started or not ready or not remote or not IsAlive() or isReloading or ammo >= magazineSize then
 		return
 	end
 	-- Predict the start only; ammunition is refilled by a server snapshot.
@@ -130,7 +137,7 @@ local function TryFire(now: number)
 	local ray = camera:ViewportPointToRay(viewport.X / 2, viewport.Y / 2)
 	local direction = ray.Direction.Unit
 	-- No catch-up burst after a slow frame, and clicking cannot bypass cooldown.
-	nextShotAt = now + config.FireInterval
+	nextShotAt = now + fireInterval
 	ammo -= 1
 	shotId += 1
 	pendingShots[shotId] = true
@@ -158,6 +165,9 @@ type ServerState = {
 	Character: Model?,
 	WeaponId: string,
 	Ammo: number,
+	MagazineSize: number,
+	FireInterval: number,
+	Damage: number,
 	IsReloading: boolean,
 	AckShotId: number,
 	AckReloadId: number,
@@ -170,6 +180,9 @@ local function OnServerState(state: ServerState)
 		return
 	end
 	latestRevision = state.Revision
+	magazineSize = state.MagazineSize
+	fireInterval = state.FireInterval
+	damage = state.Damage
 	local unacknowledged = 0
 	for id in pendingShots do
 		if id <= state.AckShotId then

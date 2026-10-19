@@ -6,6 +6,11 @@
     "ReplicatedStorage": {
       "Remotes": {
         "$className": "Folder",
+        "Progression": {
+          "$className": "Folder",
+          "LevelUpAvailable": { "$className": "RemoteEvent" },
+          "SelectUpgrade": { "$className": "RemoteEvent" }
+        },
         "Combat": {
           "$className": "Folder",
           "FireWeapon": {
