@@ -152,6 +152,19 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	return model
 end
 
+function EnemyService.GetEnemyCount(): number
+	local destination = container
+	if not started or not destination then return 0 end
+	local count = 0
+	for model, record in records do
+		if not record.Dead and record.Health > 0 and record.Humanoid.Health > 0
+			and model:IsDescendantOf(destination) then
+			count += 1
+		end
+	end
+	return count
+end
+
 function EnemyService.DespawnEnemy(model: Model)
 	if not records[model] then
 		return
