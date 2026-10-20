@@ -6,6 +6,11 @@
     "ReplicatedStorage": {
       "Remotes": {
         "$className": "Folder",
+        "Stage": {
+          "$className": "Folder",
+          "StageStateChanged": { "$className": "RemoteEvent" },
+          "StageTimerUpdated": { "$className": "RemoteEvent" }
+        },
         "Progression": {
           "$className": "Folder",
           "LevelUpAvailable": { "$className": "RemoteEvent" },
