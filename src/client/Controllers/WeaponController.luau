@@ -7,8 +7,9 @@ local Workspace = game:GetService("Workspace")
 
 local InputController = require(script.Parent:WaitForChild("InputController"))
 local WeaponConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("WeaponConfig"))
-local definition = WeaponConfig.GetWeaponConfig("AssaultRifle")
-assert(definition, "AssaultRifle is missing from WeaponConfig")
+local CombatConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("CombatConfig"))
+local definition = WeaponConfig.GetWeaponConfig(CombatConfig.DefaultWeaponId)
+assert(definition, "Default weapon is missing from WeaponConfig")
 local config: WeaponConfig.WeaponDefinition = definition
 
 export type WeaponState = {
@@ -158,7 +159,7 @@ local function Update()
 		return
 	end
 	local now = os.clock()
-	TryFire(now)
+	if config.FireMode ~= "SemiAutomatic" then TryFire(now) end
 end
 
 type ServerState = {
@@ -176,9 +177,18 @@ type ServerState = {
 
 local function OnServerState(state: ServerState)
 	if not started or state.Character ~= Players.LocalPlayer.Character or state.Character == nil
-		or state.WeaponId ~= config.WeaponId or state.Revision <= latestRevision then
+		or state.Revision <= latestRevision then
 		return
 	end
+	local serverWeapon = WeaponConfig.GetWeaponConfig(state.WeaponId)
+	if not serverWeapon then return end
+	if state.WeaponId ~= config.WeaponId then
+		fireHeld = false
+		pendingReloadId = nil
+		table.clear(pendingShots)
+		nextShotAt = 0
+	end
+	config = serverWeapon
 	latestRevision = state.Revision
 	magazineSize = state.MagazineSize
 	fireInterval = state.FireInterval
@@ -227,6 +237,8 @@ function WeaponController.Init()
 		end
 		fireHeld = true
 		TryFire(os.clock())
+		-- A press during cooldown/reload is discarded rather than queued.
+		if config.FireMode == "SemiAutomatic" then fireHeld = false end
 	end))
 	table.insert(connections, InputController.FireReleased:Connect(function()
 		fireHeld = false

@@ -34,6 +34,12 @@ local function InputBlocked(): boolean
 	return InputController.IsUIBlocked() or not focused or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() ~= nil
 end
 
+function CameraController.AddRecoil(degrees: number)
+	if started and not InputBlocked() then
+		pitch = math.clamp(pitch + math.rad(degrees), math.rad(Config.MinPitch), math.rad(Config.MaxPitch))
+	end
+end
+
 local function ReleaseMouse()
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 	UserInputService.MouseIconEnabled = true

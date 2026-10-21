@@ -12,6 +12,7 @@ export type WeaponDefinition = {
 	Penetration: number,
 	PelletCount: number?,
 	Spread: number?, -- Maximum angular deviation from aim, in degrees (cone half-angle).
+	FireMode: string?, -- Defaults to automatic; Shotgun consumes one press per shot.
 }
 
 -- Add future weapon definitions here, keyed by WeaponId.
@@ -29,6 +30,7 @@ local definitions: { [string]: WeaponDefinition } = {
 	},
 	Shotgun = {
 		WeaponId = "Shotgun",
+		FireMode = "SemiAutomatic",
 		Damage = 10, -- Per pellet.
 		PelletCount = 8,
 		FireInterval = 1.0,

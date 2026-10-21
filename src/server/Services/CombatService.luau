@@ -10,6 +10,7 @@ local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateServic
 local WeaponStats = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("WeaponStats"))
 local Config = require(ConfigFolder:WaitForChild("CombatConfig"))
 local Validation = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("CombatValidation"))
+local Ballistics = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("WeaponBallistics"))
 
 type PlayerWeapon = {
 	Character: Model?,
@@ -29,6 +30,8 @@ local CombatService = {}
 local states: { [Player]: PlayerWeapon } = {}
 local connections: { RBXScriptConnection } = {}
 local stateRemote: RemoteEvent? = nil
+local shotRemote: RemoteEvent? = nil
+local random = Random.new()
 local started = false
 type EnemyDamageHandler = (model: Model, amount: number, attacker: Player) -> boolean
 local damageEnemy: EnemyDamageHandler? = nil
@@ -135,16 +138,30 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 	state.Ammo -= 1
 	-- Carry timing debt forward: jitter tolerance cannot increase sustained fire rate.
 	state.NextShotAt = math.max(now, state.NextShotAt) + config.FireInterval
-	local hit = Workspace:Raycast(origin, direction.Unit * config.Range, params)
-	if hit and Config.LogHits then
-		print(string.format("[CombatService] %s hit %s (shot %d)", player.Name, hit.Instance.Name, shotId))
-	end
-	if hit then
-		local enemy = FindEnemyModel(hit.Instance)
-		local applyDamage = damageEnemy
-		if enemy and applyDamage then
-			applyDamage(enemy, config.Damage, player)
+	local endpoints: { Vector3 } = {}
+	local hits: { [Model]: number } = {}
+	local directions = Ballistics.GetDirections(direction, config.PelletCount or 1, config.Spread or 0, random)
+	for pellet, pelletDirection in directions do
+		local hit = Workspace:Raycast(origin, pelletDirection * config.Range, params)
+		table.insert(endpoints, if hit then hit.Position else origin + pelletDirection * config.Range)
+		if hit then
+			if Config.LogHits then
+				print(string.format("[CombatService] %s hit %s (shot %d, pellet %d)", player.Name, hit.Instance.Name, shotId, pellet))
+			end
+			local enemy = FindEnemyModel(hit.Instance)
+			if enemy then hits[enemy] = (hits[enemy] or 0) + 1 end
 		end
+	end
+	-- Resolve every pellet before damage can delete a killed enemy model.
+	local applyDamage = damageEnemy
+	if applyDamage then
+		for enemy, pelletHits in hits do applyDamage(enemy, config.Damage * pelletHits, player) end
+	end
+	local visualRemote = shotRemote
+	if config.WeaponId == "Shotgun" and visualRemote then
+		visualRemote:FireClient(player, {
+			WeaponId = config.WeaponId, ShotId = shotId, Character = state.Character, Origin = origin, EndPositions = endpoints,
+		})
 	end
 	SendState(player, state)
 end
@@ -239,13 +256,16 @@ function CombatService.Init(applyEnemyDamage: EnemyDamageHandler)
 	local fire = remotes:WaitForChild("FireWeapon")
 	local reload = remotes:WaitForChild("ReloadWeapon")
 	local snapshot = remotes:WaitForChild("WeaponStateChanged")
-	assert(fire:IsA("RemoteEvent") and reload:IsA("RemoteEvent") and snapshot:IsA("RemoteEvent"), "Combat remotes must be RemoteEvents")
+	local resolved = remotes:WaitForChild("WeaponShotResolved")
+	assert(fire:IsA("RemoteEvent") and reload:IsA("RemoteEvent") and snapshot:IsA("RemoteEvent")
+		and resolved:IsA("RemoteEvent"), "Combat remotes must be RemoteEvents")
 	if started then
 		return
 	end
 	started = true
 	damageEnemy = applyEnemyDamage
 	stateRemote = snapshot
+	shotRemote = resolved
 	table.insert(connections, Players.PlayerAdded:Connect(AddPlayer))
 	table.insert(connections, Players.PlayerRemoving:Connect(RemovePlayer))
 	for _, player in Players:GetPlayers() do
@@ -288,6 +308,7 @@ function CombatService.Destroy()
 		RemovePlayer(player)
 	end
 	stateRemote = nil
+	shotRemote = nil
 	damageEnemy = nil
 end
 
