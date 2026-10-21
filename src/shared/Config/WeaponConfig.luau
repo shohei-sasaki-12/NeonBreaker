@@ -10,6 +10,8 @@ export type WeaponDefinition = {
 	CriticalChance: number,
 	CriticalMultiplier: number,
 	Penetration: number,
+	PelletCount: number?,
+	Spread: number?, -- Maximum angular deviation from aim, in degrees (cone half-angle).
 }
 
 -- Add future weapon definitions here, keyed by WeaponId.
@@ -24,6 +26,19 @@ local definitions: { [string]: WeaponDefinition } = {
 		CriticalChance = 0.05,
 		CriticalMultiplier = 1.5,
 		Penetration = 0,
+	},
+	Shotgun = {
+		WeaponId = "Shotgun",
+		Damage = 10, -- Per pellet.
+		PelletCount = 8,
+		FireInterval = 1.0,
+		MagazineSize = 6,
+		ReloadTime = 2.5,
+		Range = 90,
+		CriticalChance = 0.05,
+		CriticalMultiplier = 1.5,
+		Penetration = 0,
+		Spread = 8, -- Provisional cone half-angle in degrees; tune before implementing firing.
 	},
 }
 
