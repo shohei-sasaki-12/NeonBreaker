@@ -42,6 +42,19 @@ local definitions: { [string]: WeaponDefinition } = {
 		Penetration = 0,
 		Spread = 8, -- Provisional cone half-angle in degrees; tune before implementing firing.
 	},
+	Handgun = {
+		WeaponId = "Handgun",
+		FireMode = "SemiAutomatic",
+		Damage = 28,
+		FireInterval = 0.333,
+		MagazineSize = 12,
+		ReloadTime = 1.5,
+		Range = 200,
+		CriticalChance = 0.15,
+		CriticalMultiplier = 2.0,
+		Penetration = 0,
+		Spread = 0.5, -- Provisional very small cone half-angle in degrees.
+	},
 }
 
 -- Base settings are shared constants; runtime weapon state belongs elsewhere.
