@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("StageConfig"))
+local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 
 export type StageState = "Waiting" | "Countdown" | "Running" | "Cleared" | "GameOver"
 export type Snapshot = {
@@ -41,6 +42,7 @@ end
 
 local function Transition(nextState: StageState, deadline: number?)
 	state = nextState
+	PlayerStateService.SetWeaponSelectionLocked(nextState ~= "Waiting")
 	endsAt = deadline
 	local snapshot = StageService.GetState()
 	lastRemaining = snapshot.RemainingSeconds
@@ -56,6 +58,8 @@ local function GetReadyPlayers(): { [Player]: Participant }?
 	if #players == 0 then return nil end
 	local ready: { [Player]: Participant } = {}
 	for _, player in players do
+		local playerState = PlayerStateService.GetState(player)
+		if not playerState or not playerState.HasSelectedWeapon then return nil end
 		local character = player.Character
 		local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
 		if not character or not character.Parent or not humanoid or humanoid.Health <= 0 then return nil end
@@ -156,6 +160,7 @@ function StageService.Destroy()
 	state = "Waiting"
 	endsAt = nil
 	lastRemaining = -1
+	PlayerStateService.SetWeaponSelectionLocked(false)
 end
 
 return StageService

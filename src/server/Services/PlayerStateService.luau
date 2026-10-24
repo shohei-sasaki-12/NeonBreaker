@@ -5,21 +5,34 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("ProgressionConfig"))
 local UpgradeConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("UpgradeConfig"))
+local ConfigFolder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
+local WeaponConfig = require(ConfigFolder:WaitForChild("WeaponConfig"))
+local CombatConfig = require(ConfigFolder:WaitForChild("CombatConfig"))
+local SelectionConfig = require(ConfigFolder:WaitForChild("WeaponSelectionConfig"))
 
-export type PlayerState = { Level: number, CurrentXP: number, RequiredXP: number, Upgrades: { [string]: number } }
+export type PlayerState = {
+	Level: number, CurrentXP: number, RequiredXP: number, Upgrades: { [string]: number },
+	CurrentWeaponId: string, HasSelectedWeapon: boolean,
+}
 
 local states: { [Player]: PlayerState } = {}
 local connections: { RBXScriptConnection } = {}
 local experienceChanged = Instance.new("BindableEvent")
 local upgradeChanged = Instance.new("BindableEvent")
+local weaponChanged = Instance.new("BindableEvent")
 local started = false
-local PlayerStateService = { ExperienceChanged = experienceChanged.Event, UpgradeChanged = upgradeChanged.Event }
+local weaponSelectionLocked = false
+local PlayerStateService = {
+	ExperienceChanged = experienceChanged.Event, UpgradeChanged = upgradeChanged.Event, WeaponChanged = weaponChanged.Event,
+}
 
 local function PublishState(player: Player, state: PlayerState)
 	-- Display/debug mirrors only. Clients cannot grant XP through attributes.
 	player:SetAttribute("Level", state.Level)
 	player:SetAttribute("CurrentXP", state.CurrentXP)
 	player:SetAttribute("RequiredXP", state.RequiredXP)
+	player:SetAttribute("CurrentWeaponId", state.CurrentWeaponId)
+	player:SetAttribute("HasSelectedWeapon", state.HasSelectedWeapon)
 	for id, level in state.Upgrades do
 		player:SetAttribute("Upgrade_" .. id, level)
 	end
@@ -32,6 +45,8 @@ local function AddPlayer(player: Player)
 			CurrentXP = 0,
 			RequiredXP = Config.GetRequiredXP(Config.InitialLevel),
 			Upgrades = {},
+			CurrentWeaponId = CombatConfig.DefaultWeaponId,
+			HasSelectedWeapon = false,
 		}
 		for _, id in UpgradeConfig.GetUpgradeIds() do
 			state.Upgrades[id] = 0
@@ -46,6 +61,8 @@ local function RemovePlayer(player: Player)
 	player:SetAttribute("Level", nil)
 	player:SetAttribute("CurrentXP", nil)
 	player:SetAttribute("RequiredXP", nil)
+	player:SetAttribute("CurrentWeaponId", nil)
+	player:SetAttribute("HasSelectedWeapon", nil)
 	for _, id in UpgradeConfig.GetUpgradeIds() do
 		player:SetAttribute("Upgrade_" .. id, nil)
 	end
@@ -56,7 +73,31 @@ function PlayerStateService.GetState(player: Player): PlayerState?
 	return if state then table.freeze({
 		Level = state.Level, CurrentXP = state.CurrentXP, RequiredXP = state.RequiredXP,
 		Upgrades = table.freeze(table.clone(state.Upgrades)),
+		CurrentWeaponId = state.CurrentWeaponId, HasSelectedWeapon = state.HasSelectedWeapon,
 	}) else nil
+end
+
+-- StageService owns the selection window; no client-supplied state can unlock it.
+function PlayerStateService.SetWeaponSelectionLocked(locked: boolean)
+	assert(RunService:IsServer(), "Weapon selection lock must be set on the server")
+	weaponSelectionLocked = locked
+end
+
+function PlayerStateService.TrySelectWeapon(player: Player, weaponId: any): boolean
+	assert(RunService:IsServer(), "Weapons must be selected on the server")
+	local state = states[player]
+	if not started or weaponSelectionLocked or not state or player.Parent ~= Players
+		or typeof(weaponId) ~= "string" or not table.find(SelectionConfig.WeaponIds, weaponId)
+		or not WeaponConfig.GetWeaponConfig(weaponId) then
+		return false
+	end
+	local changedWeapon = state.CurrentWeaponId ~= weaponId
+	state.CurrentWeaponId = weaponId
+	state.HasSelectedWeapon = true
+	player:SetAttribute("CurrentWeaponId", weaponId)
+	player:SetAttribute("HasSelectedWeapon", true)
+	if changedWeapon then weaponChanged:Fire(player, weaponId) end
+	return true
 end
 
 -- Trusted server commit; ProgressionService validates the outstanding offer first.
@@ -97,6 +138,7 @@ function PlayerStateService.UpdateProgression(player: Player, level: number, cur
 	local snapshot = table.freeze({
 		Level = level, CurrentXP = currentXP, RequiredXP = requiredXP,
 		Upgrades = table.freeze(table.clone(state.Upgrades)),
+		CurrentWeaponId = state.CurrentWeaponId, HasSelectedWeapon = state.HasSelectedWeapon,
 	})
 	PublishState(player, snapshot)
 	-- Keep the original first three arguments; append the committed snapshot.
@@ -126,6 +168,7 @@ function PlayerStateService.Destroy()
 		connection:Disconnect()
 	end
 	table.clear(connections)
+	weaponSelectionLocked = false
 	for player in states do
 		RemovePlayer(player)
 	end

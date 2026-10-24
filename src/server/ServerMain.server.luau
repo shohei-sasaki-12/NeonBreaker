@@ -8,6 +8,7 @@ local ProgressionService = require(script.Parent:WaitForChild("Services"):WaitFo
 local ExperienceOrbService = require(script.Parent:WaitForChild("Services"):WaitForChild("ExperienceOrbService"))
 local StageService = require(script.Parent:WaitForChild("Services"):WaitForChild("StageService"))
 local SpawnService = require(script.Parent:WaitForChild("Services"):WaitForChild("SpawnService"))
+local WeaponSelectionService = require(script.Parent:WaitForChild("Services"):WaitForChild("WeaponSelectionService"))
 
 -- Wire service communication here to avoid mutual require dependencies.
 PlayerStateService.Init()
@@ -16,6 +17,7 @@ ExperienceOrbService.Init()
 CombatService.Init(EnemyService.ApplyDamage)
 EnemyService.Init(ExperienceOrbService.SpawnOrb)
 StageService.Init()
+WeaponSelectionService.Init()
 SpawnService.Init()
 
 print("Server initialization complete")

@@ -6,6 +6,10 @@
     "ReplicatedStorage": {
       "Remotes": {
         "$className": "Folder",
+        "Lobby": {
+          "$className": "Folder",
+          "SelectWeapon": { "$className": "RemoteEvent" }
+        },
         "Stage": {
           "$className": "Folder",
           "StageStateChanged": { "$className": "RemoteEvent" },

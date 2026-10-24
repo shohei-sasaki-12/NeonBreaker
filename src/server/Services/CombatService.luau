@@ -114,10 +114,11 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 	UpdateReload(player, state, now)
 	state.LastShotId = shotId
 	local root = Validation.GetLivingRoot(player, state.Character)
+	local playerState = PlayerStateService.GetState(player)
 	local config = if typeof(weaponId) == "string" then GetWeaponConfig(player, weaponId) else nil
 	-- Handgun presses must respect the full interval, even with forged remotes.
 	local timingTolerance = if weaponId == "Handgun" then 0 else Config.FireTimingTolerance
-	if not root or weaponId ~= state.WeaponId or not config
+	if not root or not playerState or weaponId ~= playerState.CurrentWeaponId or weaponId ~= state.WeaponId or not config
 		or state.ReloadEndsAt ~= nil or state.Ammo <= 0 or now + timingTolerance < state.NextShotAt
 		or not Validation.IsVector(origin) or not Validation.IsDirection(direction)
 		or (origin - root.Position).Magnitude > Config.MaxOriginDistance then
@@ -188,8 +189,10 @@ local function OnReload(player: Player, weaponId: any, reloadId: any)
 	end
 	UpdateReload(player, state, now)
 	state.LastReloadId = reloadId
+	local playerState = PlayerStateService.GetState(player)
 	local config = if typeof(weaponId) == "string" then GetWeaponConfig(player, weaponId) else nil
-	if Validation.GetLivingRoot(player, state.Character) and config and weaponId == state.WeaponId
+	if Validation.GetLivingRoot(player, state.Character) and playerState and config
+		and weaponId == playerState.CurrentWeaponId and weaponId == state.WeaponId
 		and state.ReloadEndsAt == nil and state.Ammo < config.MagazineSize then
 		state.ReloadEndsAt = now + config.ReloadTime
 	end
@@ -210,18 +213,22 @@ local function AddPlayer(player: Player)
 	if states[player] then
 		return
 	end
-	local config = GetWeaponConfig(player, Config.DefaultWeaponId)
-	assert(config, "Default weapon is missing from WeaponConfig")
+	local playerState = PlayerStateService.GetState(player)
+	assert(playerState, "PlayerStateService must initialize before CombatService")
+	local config = GetWeaponConfig(player, playerState.CurrentWeaponId)
+	assert(config, "Current weapon is missing from WeaponConfig")
 	local state: PlayerWeapon = {
 		Character = nil, WeaponId = config.WeaponId, Ammo = config.MagazineSize,
 		ReloadEndsAt = nil, NextShotAt = 0, LastShotId = 0, LastReloadId = 0,
 		Revision = 0, Tokens = Config.RemoteBurstSize, TokenTime = os.clock(), Connections = {},
 	}
 	states[player] = state
-	-- Equipment stays in CombatService; upgrades live in PlayerStateService.
+	-- PlayerStateService owns equipment; CombatService owns ammunition and timing.
 	local function OnCharacterAdded(character: Model)
 		state.Character = character
-		state.WeaponId = config.WeaponId
+		local current = PlayerStateService.GetState(player)
+		assert(current, "Player state is missing on character spawn")
+		state.WeaponId = current.CurrentWeaponId
 		local weapon = GetWeaponConfig(player, state.WeaponId)
 		assert(weapon, "Equipped weapon is missing from WeaponConfig")
 		state.Ammo = weapon.MagazineSize
@@ -287,6 +294,19 @@ function CombatService.Init(applyEnemyDamage: EnemyDamageHandler)
 	end
 	table.insert(connections, fire.OnServerEvent:Connect(OnFire))
 	table.insert(connections, reload.OnServerEvent:Connect(OnReload))
+	table.insert(connections, PlayerStateService.WeaponChanged:Connect(function(player: Player)
+		local state = states[player]
+		local current = PlayerStateService.GetState(player)
+		if not state or not current or state.WeaponId == current.CurrentWeaponId then return end
+		local weapon = GetWeaponConfig(player, current.CurrentWeaponId)
+		assert(weapon, "Selected weapon is missing from WeaponConfig")
+		state.WeaponId = current.CurrentWeaponId
+		state.Ammo = weapon.MagazineSize
+		state.ReloadEndsAt = nil
+		state.NextShotAt = 0
+		-- Keep request sequence IDs monotonic when replacing the equipped weapon.
+		SendState(player, state)
+	end))
 	table.insert(connections, PlayerStateService.UpgradeChanged:Connect(function(player: Player)
 		local state = states[player]
 		if state then
