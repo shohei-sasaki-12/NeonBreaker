@@ -115,8 +115,10 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 	state.LastShotId = shotId
 	local root = Validation.GetLivingRoot(player, state.Character)
 	local config = if typeof(weaponId) == "string" then GetWeaponConfig(player, weaponId) else nil
+	-- Handgun presses must respect the full interval, even with forged remotes.
+	local timingTolerance = if weaponId == "Handgun" then 0 else Config.FireTimingTolerance
 	if not root or weaponId ~= state.WeaponId or not config
-		or state.ReloadEndsAt ~= nil or state.Ammo <= 0 or now + Config.FireTimingTolerance < state.NextShotAt
+		or state.ReloadEndsAt ~= nil or state.Ammo <= 0 or now + timingTolerance < state.NextShotAt
 		or not Validation.IsVector(origin) or not Validation.IsDirection(direction)
 		or (origin - root.Position).Magnitude > Config.MaxOriginDistance then
 		SendState(player, state)
@@ -155,7 +157,19 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 	-- Resolve every pellet before damage can delete a killed enemy model.
 	local applyDamage = damageEnemy
 	if applyDamage then
-		for enemy, pelletHits in hits do applyDamage(enemy, config.Damage * pelletHits, player) end
+		for enemy, pelletHits in hits do
+			local damage = config.Damage * pelletHits
+			-- Enable criticals for Handgun only in this step; retain existing weapons' damage.
+			if config.WeaponId == "Handgun" then
+				local critical = random:NextNumber() < config.CriticalChance
+				if critical then damage *= config.CriticalMultiplier end
+				if Config.LogHits then
+					print(string.format("[CombatService] %s Handgun damage %.2f (shot %d, critical=%s)",
+						player.Name, damage, shotId, tostring(critical)))
+				end
+			end
+			applyDamage(enemy, damage, player)
+		end
 	end
 	local visualRemote = shotRemote
 	if config.WeaponId == "Shotgun" and visualRemote then
