@@ -6,8 +6,9 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SpecialEquipmentConfig"))
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
+local Validation = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("CombatValidation"))
 
-export type SpecialHandler = (player: Player, level: number) -> ()
+export type SpecialHandler = (player: Player, level: number, direction: Vector3) -> ()
 local SpecialEquipmentService = {}
 local handlers: { [string]: SpecialHandler } = {}
 local connections: { RBXScriptConnection } = {}
@@ -23,7 +24,7 @@ function SpecialEquipmentService.RegisterSpecial(specialId: string, handler: Spe
 	return true
 end
 
-function SpecialEquipmentService.UseSpecial(player: Player): (boolean, string)
+function SpecialEquipmentService.UseSpecial(player: Player, aimDirection: any?): (boolean, string)
 	assert(RunService:IsServer(), "Special equipment must be used on the server")
 	local state = PlayerStateService.GetState(player)
 	if not started or player.Parent ~= Players or not state then return false, "NotReady" end
@@ -37,6 +38,8 @@ function SpecialEquipmentService.UseSpecial(player: Player): (boolean, string)
 	local root = if character then character:FindFirstChild("HumanoidRootPart") else nil
 	if not character or not character.Parent or not humanoid or humanoid.Health <= 0
 		or not root or not root:IsA("BasePart") then return false, "NotAlive" end
+	if aimDirection ~= nil and not Validation.IsDirection(aimDirection) then return false, "InvalidDirection" end
+	local direction = if aimDirection ~= nil then aimDirection.Unit else root.CFrame.LookVector
 	if Workspace:GetServerTimeNow() < state.SpecialCooldown then return false, "Cooldown" end
 	local handler = handlers[id]
 	if not handler then return false, "NotImplemented" end
@@ -46,7 +49,7 @@ function SpecialEquipmentService.UseSpecial(player: Player): (boolean, string)
 		inUse[player] = nil
 		return false, "StateChanged"
 	end
-	local ok, message = pcall(handler, player, state.SpecialLevel)
+	local ok, message = pcall(handler, player, state.SpecialLevel, direction)
 	inUse[player] = nil
 	if not ok then
 		warn("[SpecialEquipmentService] " .. id .. " failed: " .. tostring(message))
@@ -62,13 +65,13 @@ function SpecialEquipmentService.Init()
 	assert(remote:IsA("RemoteEvent"), "UseSpecial must be a RemoteEvent")
 	if started then return end
 	started = true
-	table.insert(connections, remote.OnServerEvent:Connect(function(player: Player)
+	table.insert(connections, remote.OnServerEvent:Connect(function(player: Player, aimDirection: any)
 		if player.Parent ~= Players then return end
 		local now = Workspace:GetServerTimeNow()
 		if now < (nextRequestAt[player] or 0) then return end
 		nextRequestAt[player] = now + Config.RequestInterval
-		-- All supplied client arguments are ignored. Ownership and values come from PlayerState.
-		local success, reason = SpecialEquipmentService.UseSpecial(player)
+		-- Only aim is accepted; origin, ownership, cooldown, damage and targets are server-owned.
+		local success, reason = SpecialEquipmentService.UseSpecial(player, aimDirection)
 		local state = PlayerStateService.GetState(player)
 		if state and player.Parent == Players then
 			remote:FireClient(player, {

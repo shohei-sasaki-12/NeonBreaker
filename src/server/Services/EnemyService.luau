@@ -165,6 +165,21 @@ function EnemyService.GetEnemyCount(): number
 	return count
 end
 
+-- Return each managed living enemy once, measured from its root on the server.
+function EnemyService.GetEnemiesInRadius(position: Vector3, radius: number): { Model }
+	local result: { Model } = {}
+	local destination = container
+	if not started or not destination then return result end
+	for model, record in records do
+		local root = model.PrimaryPart
+		if not record.Dead and record.Health > 0 and record.Humanoid.Health > 0
+			and model:IsDescendantOf(destination) and root and (root.Position - position).Magnitude <= radius then
+			table.insert(result, model)
+		end
+	end
+	return result
+end
+
 function EnemyService.DespawnEnemy(model: Model)
 	if not records[model] then
 		return

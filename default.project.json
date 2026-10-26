@@ -6,6 +6,10 @@
     "ReplicatedStorage": {
       "Remotes": {
         "$className": "Folder",
+        "Effects": {
+          "$className": "Folder",
+          "PlaySpecialEffect": { "$className": "RemoteEvent" }
+        },
         "Lobby": {
           "$className": "Folder",
           "SelectWeapon": { "$className": "RemoteEvent" }

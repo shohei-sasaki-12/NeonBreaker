@@ -2,6 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 local InputController = require(script.Parent:WaitForChild("InputController"))
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SpecialEquipmentConfig"))
 
@@ -21,7 +22,13 @@ function SpecialEquipmentController.Init()
 		local now = os.clock()
 		if now < nextRequestAt then return end
 		nextRequestAt = now + Config.RequestInterval
-		remote:FireServer()
+		local camera = Workspace.CurrentCamera
+		local direction: Vector3? = nil
+		if camera and camera.ViewportSize.X > 0 and camera.ViewportSize.Y > 0 then
+			local viewport = camera.ViewportSize
+			direction = camera:ViewportPointToRay(viewport.X / 2, viewport.Y / 2).Direction.Unit
+		end
+		remote:FireServer(direction)
 	end))
 	table.insert(connections, remote.OnClientEvent:Connect(function(result)
 		print("[SpecialEquipment] " .. result.Reason)

@@ -6,8 +6,9 @@ export type SpecialDefinition = {
 	MaxLevel: number,
 }
 
--- Individual equipment definitions will be added in their own implementation steps.
-local definitions: { [string]: SpecialDefinition } = {}
+local definitions: { [string]: SpecialDefinition } = {
+	Grenade = { SpecialId = "Grenade", Cooldown = 12, MaxLevel = 5 },
+}
 for _, definition in definitions do table.freeze(definition) end
 table.freeze(definitions)
 
