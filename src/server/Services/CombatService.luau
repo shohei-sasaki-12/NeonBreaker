@@ -210,11 +210,12 @@ local function RemovePlayer(player: Player)
 end
 
 local function AddPlayer(player: Player)
-	if states[player] then
+	if not started or player.Parent ~= Players or states[player] then
 		return
 	end
 	local playerState = PlayerStateService.GetState(player)
-	assert(playerState, "PlayerStateService must initialize before CombatService")
+	-- StateReady will retry when creation completes; never invent a fallback state.
+	if not playerState then return end
 	local config = GetWeaponConfig(player, playerState.CurrentWeaponId)
 	assert(config, "Current weapon is missing from WeaponConfig")
 	local state: PlayerWeapon = {
@@ -225,9 +226,10 @@ local function AddPlayer(player: Player)
 	states[player] = state
 	-- PlayerStateService owns equipment; CombatService owns ammunition and timing.
 	local function OnCharacterAdded(character: Model)
-		state.Character = character
+		if not started or states[player] ~= state or player.Parent ~= Players or player.Character ~= character then return end
 		local current = PlayerStateService.GetState(player)
-		assert(current, "Player state is missing on character spawn")
+		if not current then return end
+		state.Character = character
 		state.WeaponId = current.CurrentWeaponId
 		local weapon = GetWeaponConfig(player, state.WeaponId)
 		assert(weapon, "Equipped weapon is missing from WeaponConfig")
@@ -287,7 +289,8 @@ function CombatService.Init(applyEnemyDamage: EnemyDamageHandler)
 	damageEnemy = applyEnemyDamage
 	stateRemote = snapshot
 	shotRemote = resolved
-	table.insert(connections, Players.PlayerAdded:Connect(AddPlayer))
+	-- Subscribe before scanning, covering both new joins and already-created states.
+	table.insert(connections, PlayerStateService.StateReady:Connect(AddPlayer))
 	table.insert(connections, Players.PlayerRemoving:Connect(RemovePlayer))
 	for _, player in Players:GetPlayers() do
 		AddPlayer(player)

@@ -24,11 +24,13 @@ local experienceChanged = Instance.new("BindableEvent")
 local upgradeChanged = Instance.new("BindableEvent")
 local weaponChanged = Instance.new("BindableEvent")
 local specialChanged = Instance.new("BindableEvent")
+local stateReady = Instance.new("BindableEvent")
 local started = false
 local weaponSelectionLocked = false
 local PlayerStateService = {
 	ExperienceChanged = experienceChanged.Event, UpgradeChanged = upgradeChanged.Event, WeaponChanged = weaponChanged.Event,
 	SpecialChanged = specialChanged.Event,
+	StateReady = stateReady.Event, -- (player): private state and display mirrors are ready.
 }
 
 local function PublishState(player: Player, state: PlayerState)
@@ -47,6 +49,8 @@ local function PublishState(player: Player, state: PlayerState)
 end
 
 local function AddPlayer(player: Player)
+	-- A queued PlayerAdded callback may run after the player left or Destroy().
+	if not started or player.Parent ~= Players then return end
 	if not states[player] then
 		local state: PlayerState = {
 			Level = Config.InitialLevel,
@@ -64,6 +68,9 @@ local function AddPlayer(player: Player)
 		end
 		states[player] = state
 		PublishState(player, state)
+		if started and states[player] == state and player.Parent == Players then
+			stateReady:Fire(player)
+		end
 	end
 end
 
