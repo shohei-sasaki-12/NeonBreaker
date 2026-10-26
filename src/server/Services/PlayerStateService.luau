@@ -108,6 +108,7 @@ function PlayerStateService.ApplyUpgrade(player: Player, upgradeId: string): boo
 	if not started or not state or player.Parent ~= Players or not definition then
 		return false
 	end
+	if not UpgradeConfig.CanApplyUpgrade(upgradeId, state.CurrentWeaponId, state.Upgrades) then return false end
 	local current = state.Upgrades[upgradeId] or 0
 	if current >= definition.MaxLevel then
 		return false

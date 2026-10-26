@@ -7,7 +7,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 local UpgradeConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("UpgradeConfig"))
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 
-type Offer = { Id: number, Level: number, Candidates: { string } }
+type Offer = { Id: number, Level: number, WeaponId: string, Candidates: { string } }
 type Choices = {
 	Pending: number, LastLevel: number, Offer: Offer?,
 	NextSelectAt: number, NextSyncAt: number,
@@ -41,20 +41,22 @@ local function GetChoices(player: Player): Choices
 end
 
 local function EnsureOffer(player: Player, record: Choices)
-	if record.Offer or record.Pending <= 0 then
-		return
-	end
 	local state = PlayerStateService.GetState(player)
 	if not state then
 		return
 	end
-	local candidates: { string } = {}
-	for _, id in UpgradeConfig.GetUpgradeIds() do
-		local definition = UpgradeConfig.GetUpgradeConfig(id)
-		if definition and (state.Upgrades[id] or 0) < definition.MaxLevel then
-			table.insert(candidates, id)
+	local current = record.Offer
+	if current then
+		local valid = current.WeaponId == state.CurrentWeaponId
+		for _, id in current.Candidates do
+			if not UpgradeConfig.CanApplyUpgrade(id, state.CurrentWeaponId, state.Upgrades) then valid = false end
 		end
+		if valid then return end
+		-- Preserve the pending choice but never reuse the old offer ID after a weapon change.
+		record.Offer = nil
 	end
+	if record.Pending <= 0 then return end
+	local candidates = UpgradeConfig.GetEligibleUpgradeIds(state.CurrentWeaponId, state.Upgrades)
 	if #candidates == 0 then
 		-- No duplicate/max-level filler choices when the minimal pool is exhausted.
 		record.Pending = 0
@@ -68,7 +70,10 @@ local function EnsureOffer(player: Player, record: Choices)
 		table.remove(candidates)
 	end
 	nextOfferId += 1
-	record.Offer = { Id = nextOfferId, Level = record.LastLevel - record.Pending + 1, Candidates = candidates }
+	record.Offer = {
+		Id = nextOfferId, Level = record.LastLevel - record.Pending + 1,
+		WeaponId = state.CurrentWeaponId, Candidates = candidates,
+	}
 end
 
 function ProgressionService.GetPendingOffer(player: Player)
@@ -77,6 +82,7 @@ function ProgressionService.GetPendingOffer(player: Player)
 	if not record or not state then
 		return nil
 	end
+	EnsureOffer(player, record)
 	local offer = record.Offer
 	return table.freeze({
 		OfferId = if offer then offer.Id else 0,
@@ -84,10 +90,13 @@ function ProgressionService.GetPendingOffer(player: Player)
 		Candidates = table.freeze(if offer then table.clone(offer.Candidates) else {}),
 		PendingChoices = record.Pending,
 		Upgrades = state.Upgrades,
+		WeaponId = state.CurrentWeaponId,
 	})
 end
 
 local function SendOffer(player: Player)
+	local record = choices[player]
+	if record then EnsureOffer(player, record) end
 	local remote = availableRemote
 	local packet = ProgressionService.GetPendingOffer(player)
 	if remote and packet then
@@ -141,6 +150,12 @@ local function SelectUpgrade(player: Player, offerId: any, upgradeId: any)
 		return
 	end
 	record.NextSelectAt = now + UpgradeConfig.SelectInterval
+	local previous = record.Offer
+	EnsureOffer(player, record)
+	if record.Offer ~= previous then
+		SendOffer(player)
+		return
+	end
 	local offer = record.Offer
 	if not offer or typeof(offerId) ~= "number" or offerId ~= offer.Id
 		or typeof(upgradeId) ~= "string" or not table.find(offer.Candidates, upgradeId) then
@@ -173,6 +188,9 @@ function ProgressionService.Init()
 	started = true
 	availableRemote = available
 	table.insert(connections, selectUpgrade.OnServerEvent:Connect(SelectUpgrade))
+	table.insert(connections, PlayerStateService.WeaponChanged:Connect(function(player: Player)
+		if choices[player] then SendOffer(player) end
+	end))
 	-- Late subscribers request the same pending offer, never a fresh reroll.
 	table.insert(connections, available.OnServerEvent:Connect(function(player: Player)
 		if not PlayerStateService.GetState(player) or player.Parent ~= Players then
