@@ -9,10 +9,13 @@ local ConfigFolder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Conf
 local WeaponConfig = require(ConfigFolder:WaitForChild("WeaponConfig"))
 local CombatConfig = require(ConfigFolder:WaitForChild("CombatConfig"))
 local SelectionConfig = require(ConfigFolder:WaitForChild("WeaponSelectionConfig"))
+local SpecialConfig = require(ConfigFolder:WaitForChild("SpecialEquipmentConfig"))
+local Workspace = game:GetService("Workspace")
 
 export type PlayerState = {
 	Level: number, CurrentXP: number, RequiredXP: number, Upgrades: { [string]: number },
 	CurrentWeaponId: string, HasSelectedWeapon: boolean,
+	CurrentSpecial: string?, SpecialCooldown: number, SpecialLevel: number,
 }
 
 local states: { [Player]: PlayerState } = {}
@@ -20,10 +23,12 @@ local connections: { RBXScriptConnection } = {}
 local experienceChanged = Instance.new("BindableEvent")
 local upgradeChanged = Instance.new("BindableEvent")
 local weaponChanged = Instance.new("BindableEvent")
+local specialChanged = Instance.new("BindableEvent")
 local started = false
 local weaponSelectionLocked = false
 local PlayerStateService = {
 	ExperienceChanged = experienceChanged.Event, UpgradeChanged = upgradeChanged.Event, WeaponChanged = weaponChanged.Event,
+	SpecialChanged = specialChanged.Event,
 }
 
 local function PublishState(player: Player, state: PlayerState)
@@ -33,6 +38,9 @@ local function PublishState(player: Player, state: PlayerState)
 	player:SetAttribute("RequiredXP", state.RequiredXP)
 	player:SetAttribute("CurrentWeaponId", state.CurrentWeaponId)
 	player:SetAttribute("HasSelectedWeapon", state.HasSelectedWeapon)
+	player:SetAttribute("CurrentSpecial", state.CurrentSpecial)
+	player:SetAttribute("SpecialCooldown", state.SpecialCooldown)
+	player:SetAttribute("SpecialLevel", state.SpecialLevel)
 	for id, level in state.Upgrades do
 		player:SetAttribute("Upgrade_" .. id, level)
 	end
@@ -47,6 +55,9 @@ local function AddPlayer(player: Player)
 			Upgrades = {},
 			CurrentWeaponId = CombatConfig.DefaultWeaponId,
 			HasSelectedWeapon = false,
+			CurrentSpecial = nil,
+			SpecialCooldown = 0, -- Server-time deadline, not a client-maintained countdown.
+			SpecialLevel = 0,
 		}
 		for _, id in UpgradeConfig.GetUpgradeIds() do
 			state.Upgrades[id] = 0
@@ -63,6 +74,9 @@ local function RemovePlayer(player: Player)
 	player:SetAttribute("RequiredXP", nil)
 	player:SetAttribute("CurrentWeaponId", nil)
 	player:SetAttribute("HasSelectedWeapon", nil)
+	player:SetAttribute("CurrentSpecial", nil)
+	player:SetAttribute("SpecialCooldown", nil)
+	player:SetAttribute("SpecialLevel", nil)
 	for _, id in UpgradeConfig.GetUpgradeIds() do
 		player:SetAttribute("Upgrade_" .. id, nil)
 	end
@@ -74,7 +88,47 @@ function PlayerStateService.GetState(player: Player): PlayerState?
 		Level = state.Level, CurrentXP = state.CurrentXP, RequiredXP = state.RequiredXP,
 		Upgrades = table.freeze(table.clone(state.Upgrades)),
 		CurrentWeaponId = state.CurrentWeaponId, HasSelectedWeapon = state.HasSelectedWeapon,
+		CurrentSpecial = state.CurrentSpecial, SpecialCooldown = state.SpecialCooldown, SpecialLevel = state.SpecialLevel,
 	}) else nil
+end
+
+-- Trusted server grant/update API. No Remote equips special equipment.
+function PlayerStateService.SetSpecial(player: Player, specialId: string?, level: number): boolean
+	assert(RunService:IsServer(), "Special equipment must be granted on the server")
+	local state = states[player]
+	if not started or not state or player.Parent ~= Players then return false end
+	if specialId == nil then
+		if level ~= 0 then return false end
+	else
+		local definition = SpecialConfig.GetSpecialConfig(specialId)
+		if not definition or level ~= level or level % 1 ~= 0 or level < 1 or level > definition.MaxLevel then return false end
+	end
+	state.CurrentSpecial = specialId
+	state.SpecialLevel = level
+	-- Retain any existing deadline so changing/unequipping cannot bypass cooldown.
+	player:SetAttribute("CurrentSpecial", specialId)
+	player:SetAttribute("SpecialLevel", level)
+	specialChanged:Fire(player)
+	return true
+end
+
+-- Atomic reservation; SpecialEquipmentService checks life and registered behavior first.
+function PlayerStateService.TryStartSpecialCooldown(player: Player, specialId: string, level: number): boolean
+	assert(RunService:IsServer(), "Special cooldown must be started on the server")
+	local state = states[player]
+	local definition = SpecialConfig.GetSpecialConfig(specialId)
+	if not started or not state or player.Parent ~= Players or not definition
+		or state.CurrentSpecial ~= specialId or state.SpecialLevel ~= level or level < 1 or level > definition.MaxLevel then
+		return false
+	end
+	local duration = definition.Cooldown
+	if duration ~= duration or duration < 0 or duration == math.huge then return false end
+	local now = Workspace:GetServerTimeNow()
+	if now < state.SpecialCooldown then return false end
+	state.SpecialCooldown = now + duration
+	player:SetAttribute("SpecialCooldown", state.SpecialCooldown)
+	specialChanged:Fire(player)
+	return true
 end
 
 -- StageService owns the selection window; no client-supplied state can unlock it.
@@ -140,6 +194,7 @@ function PlayerStateService.UpdateProgression(player: Player, level: number, cur
 		Level = level, CurrentXP = currentXP, RequiredXP = requiredXP,
 		Upgrades = table.freeze(table.clone(state.Upgrades)),
 		CurrentWeaponId = state.CurrentWeaponId, HasSelectedWeapon = state.HasSelectedWeapon,
+		CurrentSpecial = state.CurrentSpecial, SpecialCooldown = state.SpecialCooldown, SpecialLevel = state.SpecialLevel,
 	})
 	PublishState(player, snapshot)
 	-- Keep the original first three arguments; append the committed snapshot.

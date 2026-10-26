@@ -22,6 +22,7 @@
         },
         "Combat": {
           "$className": "Folder",
+          "UseSpecial": { "$className": "RemoteEvent" },
           "WeaponShotResolved": { "$className": "RemoteEvent" },
           "FireWeapon": {
             "$className": "RemoteEvent"

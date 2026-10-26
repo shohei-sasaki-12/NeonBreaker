@@ -9,9 +9,11 @@ local ExperienceOrbService = require(script.Parent:WaitForChild("Services"):Wait
 local StageService = require(script.Parent:WaitForChild("Services"):WaitForChild("StageService"))
 local SpawnService = require(script.Parent:WaitForChild("Services"):WaitForChild("SpawnService"))
 local WeaponSelectionService = require(script.Parent:WaitForChild("Services"):WaitForChild("WeaponSelectionService"))
+local SpecialEquipmentService = require(script.Parent:WaitForChild("Services"):WaitForChild("SpecialEquipmentService"))
 
 -- Wire service communication here to avoid mutual require dependencies.
 PlayerStateService.Init()
+SpecialEquipmentService.Init()
 ProgressionService.Init()
 ExperienceOrbService.Init()
 CombatService.Init(EnemyService.ApplyDamage)
