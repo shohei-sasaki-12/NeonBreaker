@@ -11,6 +11,7 @@ local WeaponStats = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChil
 local Config = require(ConfigFolder:WaitForChild("CombatConfig"))
 local Validation = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("CombatValidation"))
 local Ballistics = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("WeaponBallistics"))
+local EnergyShield = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("EnergyShield"))
 
 type PlayerWeapon = {
 	Character: Model?,
@@ -265,7 +266,8 @@ function CombatService.ApplyEnemyDamage(player: Player, amount: number): boolean
 	if not humanoid then
 		return false
 	end
-	humanoid:TakeDamage(amount)
+	local remaining = EnergyShield.AbsorbDamage(player, amount)
+	if remaining > 0 then humanoid:TakeDamage(remaining) end
 	return true
 end
 
