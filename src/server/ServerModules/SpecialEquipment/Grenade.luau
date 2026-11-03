@@ -5,12 +5,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("GrenadeConfig"))
+local SpecialStats = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("SpecialStats"))
+local PlayerStateService = require(script.Parent.Parent.Parent:WaitForChild("Services"):WaitForChild("PlayerStateService"))
 
 type DamageHandler = (Model, number, Player?) -> boolean
 type EnemyQuery = (Vector3, number) -> { Model }
 type Projectile = {
 	Owner: Player, Character: Model, Part: Part, Position: Vector3, Velocity: Vector3,
 	FuseAt: number, UpdatedAt: number, Params: RaycastParams, Exploded: boolean,
+	Damage: number, BlastRadius: number,
 }
 local Grenade = {}
 local started = false
@@ -45,17 +48,17 @@ local function Explode(projectile: Projectile, position: Vector3)
 		params.FilterDescendantsInstances = excluded
 		params.RespectCanCollide = true
 		local damaged: { [Model]: boolean } = {}
-		for _, enemy in query(position, Config.BlastRadius) do
+		for _, enemy in query(position, projectile.BlastRadius) do
 			local root = enemy.PrimaryPart
-			if damaged[enemy] or not root or (root.Position - position).Magnitude > Config.BlastRadius then continue end
+			if damaged[enemy] or not root or (root.Position - position).Magnitude > projectile.BlastRadius then continue end
 			damaged[enemy] = true
 			local offset = root.Position - position
 			if Config.RequireBlastLineOfSight and offset.Magnitude > 0 and Workspace:Raycast(position, offset, params) then continue end
-			damage(enemy, Config.Damage, projectile.Owner)
+			damage(enemy, projectile.Damage, projectile.Owner)
 		end
 	end
 	if effectsRemote then
-		effectsRemote:FireAllClients({ SpecialId = "Grenade", Event = "Exploded", Position = position, Radius = Config.BlastRadius })
+		effectsRemote:FireAllClients({ SpecialId = "Grenade", Event = "Exploded", Position = position, Radius = projectile.BlastRadius })
 	end
 end
 
@@ -86,8 +89,7 @@ local function Update()
 	end
 end
 
-function Grenade.Use(player: Player, _level: number, direction: Vector3)
-	assert(started and RunService:IsServer(), "Grenade must be initialized on the server")
+local function Throw(player: Player, direction: Vector3, stats: SpecialStats.GrenadeStats)
 	local character = player.Character
 	assert(character, "Grenade requires a character")
 	local root = character:FindFirstChild("HumanoidRootPart")
@@ -123,9 +125,23 @@ function Grenade.Use(player: Player, _level: number, direction: Vector3)
 		Owner = player, Character = character, Part = part, Position = position,
 		Velocity = direction * Config.ThrowSpeed + Vector3.new(0, Config.UpwardSpeed, 0),
 		FuseAt = now + Config.FuseTime, UpdatedAt = now, Params = params, Exploded = false,
+		Damage = stats.Damage, BlastRadius = stats.BlastRadius,
 	}
 	projectiles[part] = projectile
 	if hit then Explode(projectile, position) end
+end
+
+function Grenade.Use(player: Player, _level: number, direction: Vector3)
+	assert(started and RunService:IsServer(), "Grenade must be initialized on the server")
+	local state = PlayerStateService.GetState(player)
+	assert(state and state.CurrentSpecial == "Grenade", "Grenade requires server-owned equipment")
+	local stats = SpecialStats.GetGrenadeStats(state.Upgrades)
+	-- One Q reserves one cooldown. All projectiles keep the same use-time stat snapshot.
+	for index = 1, stats.Count do
+		local angle = math.rad((index - (stats.Count + 1) / 2) * Config.MultiAngleStep)
+		local aimed = CFrame.fromAxisAngle(Vector3.yAxis, angle):VectorToWorldSpace(direction)
+		Throw(player, aimed, stats)
+	end
 end
 
 function Grenade.Init(query: EnemyQuery, damage: DamageHandler)

@@ -14,10 +14,31 @@ export type UpgradeDefinition = {
 	EffectType: string,
 	EffectValue: number,
 	WeaponRequirement: string?, -- nil: shared; otherwise only this WeaponId.
+	SpecialRequirement: string?, -- Special upgrades require this equipped special.
 	Enabled: boolean?, -- false reserves a definition whose gameplay effect is not implemented yet.
 }
 
 local definitions: { [string]: UpgradeDefinition } = {
+	GrenadeDamageUp = {
+		Id = "GrenadeDamageUp", DisplayName = "Grenade Damage Up", Description = "Grenade damage +10% per level",
+		Category = "Special", MaxLevel = 5, Weight = 1, SpecialRequirement = "Grenade",
+		Requirements = {}, ExcludedWeapons = {}, EffectType = "SpecialDamageMultiplier", EffectValue = 0.10,
+	},
+	GrenadeRadiusUp = {
+		Id = "GrenadeRadiusUp", DisplayName = "Grenade Radius Up", Description = "Blast radius +10% per level",
+		Category = "Special", MaxLevel = 5, Weight = 1, SpecialRequirement = "Grenade",
+		Requirements = {}, ExcludedWeapons = {}, EffectType = "SpecialRadiusMultiplier", EffectValue = 0.10,
+	},
+	GrenadeCooldownDown = {
+		Id = "GrenadeCooldownDown", DisplayName = "Grenade Cooldown Down", Description = "Base cooldown -6% per level (next use)",
+		Category = "Special", MaxLevel = 5, Weight = 1, SpecialRequirement = "Grenade",
+		Requirements = {}, ExcludedWeapons = {}, EffectType = "SpecialCooldownReduction", EffectValue = 0.06,
+	},
+	MultiGrenade = {
+		Id = "MultiGrenade", DisplayName = "Multi Grenade", Description = "Throw one additional grenade per level",
+		Category = "Special", MaxLevel = 5, Weight = 1, SpecialRequirement = "Grenade",
+		Requirements = {}, ExcludedWeapons = {}, EffectType = "SpecialCountBonus", EffectValue = 1,
+	},
 	DamageUp = {
 		Id = "DamageUp", DisplayName = "Damage Up", Description = "Damage +10% per level",
 		Category = "Weapon", MaxLevel = 5, Weight = 1,
@@ -67,6 +88,7 @@ local definitions: { [string]: UpgradeDefinition } = {
 local ids = table.freeze({
 	"DamageUp", "FireRateUp", "MagazineUp", "RapidFire", "Stabilization",
 	"ExtraPellets", "TightSpread", "CriticalChanceUp", "Ricochet",
+	"GrenadeDamageUp", "GrenadeRadiusUp", "GrenadeCooldownDown", "MultiGrenade",
 })
 for _, definition in definitions do
 	table.freeze(definition.Requirements)
@@ -88,14 +110,19 @@ end
 function UpgradeConfig.IsWeaponCompatible(upgradeId: string, weaponId: string): boolean
 	local definition = definitions[upgradeId]
 	return definition ~= nil and WeaponConfig.GetWeaponConfig(weaponId) ~= nil and definition.Enabled ~= false
+		and definition.Category == "Weapon" and definition.SpecialRequirement == nil
 		and (definition.WeaponRequirement == nil or definition.WeaponRequirement == weaponId)
 		and not table.find(definition.ExcludedWeapons, weaponId)
 end
 
-function UpgradeConfig.CanApplyUpgrade(upgradeId: string, weaponId: string, upgrades: { [string]: number }): boolean
+function UpgradeConfig.CanApplyUpgrade(upgradeId: string, weaponId: string, upgrades: { [string]: number }, specialId: string?): boolean
 	local definition = definitions[upgradeId]
-	if not definition or not UpgradeConfig.IsWeaponCompatible(upgradeId, weaponId)
-		or (upgrades[upgradeId] or 0) >= definition.MaxLevel then
+	if not definition or definition.Enabled == false or (upgrades[upgradeId] or 0) >= definition.MaxLevel then
+		return false
+	end
+	if definition.Category == "Special" then
+		if not definition.SpecialRequirement or definition.SpecialRequirement ~= specialId then return false end
+	elseif not UpgradeConfig.IsWeaponCompatible(upgradeId, weaponId) then
 		return false
 	end
 	-- Requirements lists upgrade IDs that must already have at least one level.
@@ -105,10 +132,10 @@ function UpgradeConfig.CanApplyUpgrade(upgradeId: string, weaponId: string, upgr
 	return true
 end
 
-function UpgradeConfig.GetEligibleUpgradeIds(weaponId: string, upgrades: { [string]: number }): { string }
+function UpgradeConfig.GetEligibleUpgradeIds(weaponId: string, upgrades: { [string]: number }, specialId: string?): { string }
 	local eligible: { string } = {}
 	for _, id in ids do
-		if UpgradeConfig.CanApplyUpgrade(id, weaponId, upgrades) then table.insert(eligible, id) end
+		if UpgradeConfig.CanApplyUpgrade(id, weaponId, upgrades, specialId) then table.insert(eligible, id) end
 	end
 	return eligible
 end

@@ -6,6 +6,7 @@ return table.freeze({
 	BlastRadius = 12,
 	FuseTime = 2,
 	ThrowSpeed = 60,
+	MultiAngleStep = 8, -- Degrees between simultaneous throws; centered around the aim direction.
 	UpwardSpeed = 25,
 	GravityScale = 1,
 	MaxSimulationStep = 1 / 30,

@@ -10,6 +10,7 @@ local WeaponConfig = require(ConfigFolder:WaitForChild("WeaponConfig"))
 local CombatConfig = require(ConfigFolder:WaitForChild("CombatConfig"))
 local SelectionConfig = require(ConfigFolder:WaitForChild("WeaponSelectionConfig"))
 local SpecialConfig = require(ConfigFolder:WaitForChild("SpecialEquipmentConfig"))
+local SpecialStats = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("SpecialStats"))
 local Workspace = game:GetService("Workspace")
 
 export type PlayerState = {
@@ -128,7 +129,7 @@ function PlayerStateService.TryStartSpecialCooldown(player: Player, specialId: s
 		or state.CurrentSpecial ~= specialId or state.SpecialLevel ~= level or level < 1 or level > definition.MaxLevel then
 		return false
 	end
-	local duration = definition.Cooldown
+	local duration = if specialId == "Grenade" then SpecialStats.GetGrenadeStats(state.Upgrades).Cooldown else definition.Cooldown
 	if duration ~= duration or duration < 0 or duration == math.huge then return false end
 	local now = Workspace:GetServerTimeNow()
 	if now < state.SpecialCooldown then return false end
@@ -169,7 +170,7 @@ function PlayerStateService.ApplyUpgrade(player: Player, upgradeId: string): boo
 	if not started or not state or player.Parent ~= Players or not definition then
 		return false
 	end
-	if not UpgradeConfig.CanApplyUpgrade(upgradeId, state.CurrentWeaponId, state.Upgrades) then return false end
+	if not UpgradeConfig.CanApplyUpgrade(upgradeId, state.CurrentWeaponId, state.Upgrades, state.CurrentSpecial) then return false end
 	local current = state.Upgrades[upgradeId] or 0
 	if current >= definition.MaxLevel then
 		return false

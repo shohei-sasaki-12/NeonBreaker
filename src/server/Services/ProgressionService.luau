@@ -7,7 +7,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 local UpgradeConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("UpgradeConfig"))
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 
-type Offer = { Id: number, Level: number, WeaponId: string, Candidates: { string } }
+type Offer = { Id: number, Level: number, WeaponId: string, SpecialId: string?, Candidates: { string } }
 type Choices = {
 	Pending: number, LastLevel: number, Offer: Offer?,
 	NextSelectAt: number, NextSyncAt: number,
@@ -47,16 +47,16 @@ local function EnsureOffer(player: Player, record: Choices)
 	end
 	local current = record.Offer
 	if current then
-		local valid = current.WeaponId == state.CurrentWeaponId
+		local valid = current.WeaponId == state.CurrentWeaponId and current.SpecialId == state.CurrentSpecial
 		for _, id in current.Candidates do
-			if not UpgradeConfig.CanApplyUpgrade(id, state.CurrentWeaponId, state.Upgrades) then valid = false end
+			if not UpgradeConfig.CanApplyUpgrade(id, state.CurrentWeaponId, state.Upgrades, state.CurrentSpecial) then valid = false end
 		end
 		if valid then return end
-		-- Preserve the pending choice but never reuse the old offer ID after a weapon change.
+		-- Preserve the pending choice but never reuse the old offer ID after equipment changes.
 		record.Offer = nil
 	end
 	if record.Pending <= 0 then return end
-	local candidates = UpgradeConfig.GetEligibleUpgradeIds(state.CurrentWeaponId, state.Upgrades)
+	local candidates = UpgradeConfig.GetEligibleUpgradeIds(state.CurrentWeaponId, state.Upgrades, state.CurrentSpecial)
 	if #candidates == 0 then
 		-- No duplicate/max-level filler choices when the minimal pool is exhausted.
 		record.Pending = 0
@@ -72,7 +72,7 @@ local function EnsureOffer(player: Player, record: Choices)
 	nextOfferId += 1
 	record.Offer = {
 		Id = nextOfferId, Level = record.LastLevel - record.Pending + 1,
-		WeaponId = state.CurrentWeaponId, Candidates = candidates,
+		WeaponId = state.CurrentWeaponId, SpecialId = state.CurrentSpecial, Candidates = candidates,
 	}
 end
 
@@ -190,6 +190,14 @@ function ProgressionService.Init()
 	table.insert(connections, selectUpgrade.OnServerEvent:Connect(SelectUpgrade))
 	table.insert(connections, PlayerStateService.WeaponChanged:Connect(function(player: Player)
 		if choices[player] then SendOffer(player) end
+	end))
+	table.insert(connections, PlayerStateService.SpecialChanged:Connect(function(player: Player)
+		-- Cooldown notifications preserve the current offer; equipment changes invalidate it.
+		local record = choices[player]
+		if not record then return end
+		local previous = record.Offer
+		EnsureOffer(player, record)
+		if record.Offer ~= previous then SendOffer(player) end
 	end))
 	-- Late subscribers request the same pending offer, never a fresh reroll.
 	table.insert(connections, available.OnServerEvent:Connect(function(player: Player)
