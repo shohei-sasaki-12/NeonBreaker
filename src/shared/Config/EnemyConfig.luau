@@ -10,6 +10,8 @@ export type EnemyDefinition = {
 	ExperienceReward: number,
 	ThreatCost: number,
 	AIType: string,
+	IsMechanical: boolean?, -- EMP only affects explicitly mechanical enemies.
+	IsBoss: boolean?, -- Bosses receive a slow instead of a full stun.
 }
 
 local definitions: { [string]: EnemyDefinition } = {
@@ -23,6 +25,7 @@ local definitions: { [string]: EnemyDefinition } = {
 		ExperienceReward = 1,
 		ThreatCost = 1,
 		AIType = "Melee",
+		IsMechanical = true,
 	},
 }
 

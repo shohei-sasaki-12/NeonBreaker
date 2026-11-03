@@ -12,6 +12,7 @@ local WeaponSelectionService = require(script.Parent:WaitForChild("Services"):Wa
 local SpecialEquipmentService = require(script.Parent:WaitForChild("Services"):WaitForChild("SpecialEquipmentService"))
 local Grenade = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("Grenade"))
 local EnergyShield = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("EnergyShield"))
+local EMPPulse = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("EMPPulse"))
 
 -- Wire service communication here to avoid mutual require dependencies.
 PlayerStateService.Init()
@@ -22,8 +23,10 @@ ExperienceOrbService.Init()
 CombatService.Init(EnemyService.ApplyDamage)
 EnemyService.Init(ExperienceOrbService.SpawnOrb)
 Grenade.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyDamage)
+EMPPulse.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyEMP)
 assert(SpecialEquipmentService.RegisterSpecial("Grenade", Grenade.Use), "Grenade registration failed")
 assert(SpecialEquipmentService.RegisterSpecial("EnergyShield", EnergyShield.Use), "EnergyShield registration failed")
+assert(SpecialEquipmentService.RegisterSpecial("EMPPulse", EMPPulse.Use), "EMPPulse registration failed")
 StageService.Init()
 WeaponSelectionService.Init()
 SpawnService.Init()

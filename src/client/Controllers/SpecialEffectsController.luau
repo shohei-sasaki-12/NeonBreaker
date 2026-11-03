@@ -6,6 +6,7 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("GrenadeConfig"))
+local EMPConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("EMPConfig"))
 
 local SpecialEffectsController = {}
 local connection: RBXScriptConnection? = nil
@@ -14,9 +15,17 @@ local started = false
 
 local function OnEffect(effect)
 	local folder = container
-	if not folder or effect.SpecialId ~= "Grenade" or effect.Event ~= "Exploded" then return end
+	if not folder then return end
+	local effectConfig
+	if effect.SpecialId == "Grenade" and effect.Event == "Exploded" then
+		effectConfig = Config
+	elseif effect.SpecialId == "EMPPulse" and effect.Event == "Pulsed" then
+		effectConfig = EMPConfig
+	else
+		return
+	end
 	local flash = Instance.new("Part")
-	flash.Name = "GrenadeExplosion"
+	flash.Name = if effect.SpecialId == "Grenade" then "GrenadeExplosion" else "EMPPulseEffect"
 	flash.Shape = Enum.PartType.Ball
 	flash.Anchored = true
 	flash.CanCollide = false
@@ -24,19 +33,19 @@ local function OnEffect(effect)
 	flash.CanQuery = false
 	flash.CastShadow = false
 	flash.Material = Enum.Material.Neon
-	flash.Color = Config.ExplosionColor
+	flash.Color = effectConfig.ExplosionColor
 	flash.Size = Vector3.one
 	flash.Position = effect.Position
 	flash.Parent = folder
 	local light = Instance.new("PointLight")
-	light.Color = Config.ExplosionColor
-	light.Brightness = Config.ExplosionBrightness
+	light.Color = effectConfig.ExplosionColor
+	light.Brightness = effectConfig.ExplosionBrightness
 	light.Range = effect.Radius * 2
 	light.Parent = flash
-	local info = TweenInfo.new(Config.ExplosionDuration)
+	local info = TweenInfo.new(effectConfig.ExplosionDuration)
 	TweenService:Create(flash, info, { Size = Vector3.one * effect.Radius * 2, Transparency = 1 }):Play()
 	TweenService:Create(light, info, { Brightness = 0 }):Play()
-	Debris:AddItem(flash, Config.EffectLifetime)
+	Debris:AddItem(flash, effectConfig.EffectLifetime)
 end
 
 function SpecialEffectsController.Init()

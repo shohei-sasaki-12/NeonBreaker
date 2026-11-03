@@ -10,9 +10,13 @@ local EnemyConfig = require(ConfigFolder:WaitForChild("EnemyConfig"))
 local AIConfig = require(ConfigFolder:WaitForChild("EnemyAIConfig"))
 local CombatService = require(script.Parent:WaitForChild("CombatService"))
 local MeleeAI = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("MeleeAI"))
+local EnemyStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("EnemyStatus"))
+local EMPConfig = require(ConfigFolder:WaitForChild("EMPConfig"))
 
 type EnemyRecord = {
 	AI: MeleeAI.Controller,
+	Status: EnemyStatus.Controller,
+	EMPShieldHandler: ((number) -> ())?,
 	Humanoid: Humanoid,
 	Active: boolean,
 	EnemyId: string,
@@ -38,6 +42,7 @@ local spawnExperienceOrb: OrbSpawner? = nil
 local function StopAI(record: EnemyRecord)
 	if record.Active then
 		record.Active = false
+		record.Status.Destroy()
 		record.AI.Destroy()
 	end
 end
@@ -97,6 +102,32 @@ function EnemyService.ApplyDamage(model: Model, amount: number, attacker: Player
 	return true
 end
 
+-- Future enemy shield controllers register their server-owned durability damage API here.
+-- No shield health is inferred from attributes or client data.
+function EnemyService.RegisterEMPShieldHandler(model: Model, handler: (number) -> ()): boolean
+	assert(RunService:IsServer(), "Enemy shield handlers must be registered on the server")
+	local record = records[model]
+	if not started or not record or record.Dead or typeof(handler) ~= "function" or record.EMPShieldHandler then return false end
+	record.EMPShieldHandler = handler
+	return true
+end
+
+function EnemyService.ApplyEMP(model: Model): boolean
+	assert(RunService:IsServer(), "EMP must be applied on the server")
+	local record = records[model]
+	local destination = container
+	if not started or not record or record.Dead or not destination or not model:IsDescendantOf(destination)
+		or not CollectionService:HasTag(model, "Enemy") or record.Humanoid.Health <= 0 or record.Health <= 0 then return false end
+	if not record.Status.ApplyEMP() then return false end
+	local shieldHandler = record.EMPShieldHandler
+	if shieldHandler then
+		local amount = EMPConfig.ShieldDamage * (if record.EnemyId == "Guardian" then EMPConfig.GuardianShieldMultiplier else 1)
+		local ok, message = pcall(shieldHandler, amount)
+		if not ok then warn("[EnemyService] EMP shield handler failed: " .. tostring(message)) end
+	end
+	return true
+end
+
 function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	assert(started, "Call EnemyService.Init before spawning enemies")
 	local destination = container
@@ -138,6 +169,7 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	local ai = factory(model, config, CombatService.ApplyEnemyDamage)
 	local record: EnemyRecord = {
 		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId,
+		Status = EnemyStatus.new(model, humanoid, config), EMPShieldHandler = nil,
 		Health = config.MaxHP, Dead = false, ExperienceReward = config.ExperienceReward, Connections = {},
 	}
 	records[model] = record
@@ -217,7 +249,7 @@ function EnemyService.Init(spawnOrb: OrbSpawner)
 			elseif record.Humanoid.Health <= 0 then
 				FinishDeath(model, record, nil)
 			elseif record.Active then
-				record.AI.Update(now)
+				if not record.Status.Update() then record.AI.Update(now) end
 			end
 		end
 	end)
