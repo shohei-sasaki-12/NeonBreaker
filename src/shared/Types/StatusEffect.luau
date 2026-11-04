@@ -4,6 +4,7 @@ export type Definition = {
 	EffectId: string,
 	Duration: number,
 	Stack: number?, -- Added on reapplication; defaults to 1.
+	StackMode: ("Add" | "Refresh")?, -- Refresh replaces Stack; omitted means Add.
 	SourcePlayer: Player?, -- nil for environmental effects.
 	TickDamage: number?, -- Damage per stack per configured tick; defaults to 0.
 	SlowRate: number?, -- Reduction fraction [0, 1], not multiplied by Stack.

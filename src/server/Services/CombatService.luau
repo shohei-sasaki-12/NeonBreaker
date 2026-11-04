@@ -36,6 +36,8 @@ local random = Random.new()
 local started = false
 type EnemyDamageHandler = (model: Model, amount: number, attacker: Player) -> boolean
 local damageEnemy: EnemyDamageHandler? = nil
+type EnemyHitHandler = (Player, Model) -> boolean
+local onEnemyHit: EnemyHitHandler? = nil
 
 local function FindEnemyModel(instance: Instance): Model?
 	local current: Instance? = instance
@@ -170,7 +172,10 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 						player.Name, damage, shotId, tostring(critical)))
 				end
 			end
-			applyDamage(enemy, damage, player)
+			if applyDamage(enemy, damage, player) then
+				local onHit = onEnemyHit
+				if onHit then onHit(player, enemy) end
+			end
 		end
 	end
 	local visualRemote = shotRemote
@@ -271,12 +276,13 @@ function CombatService.ApplyEnemyDamage(player: Player, amount: number): boolean
 	return true
 end
 
-function CombatService.Init(applyEnemyDamage: EnemyDamageHandler)
+function CombatService.Init(applyEnemyDamage: EnemyDamageHandler, hitHandler: EnemyHitHandler?)
 	if started then
 		return
 	end
 	assert(RunService:IsServer(), "CombatService must run on the server")
 	assert(typeof(applyEnemyDamage) == "function", "CombatService requires an enemy damage handler")
+	assert(hitHandler == nil or typeof(hitHandler) == "function", "CombatService hit handler must be a function")
 	local remotes = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Combat")
 	local fire = remotes:WaitForChild("FireWeapon")
 	local reload = remotes:WaitForChild("ReloadWeapon")
@@ -289,6 +295,7 @@ function CombatService.Init(applyEnemyDamage: EnemyDamageHandler)
 	end
 	started = true
 	damageEnemy = applyEnemyDamage
+	onEnemyHit = hitHandler
 	stateRemote = snapshot
 	shotRemote = resolved
 	-- Subscribe before scanning, covering both new joins and already-created states.
@@ -349,6 +356,7 @@ function CombatService.Destroy()
 	stateRemote = nil
 	shotRemote = nil
 	damageEnemy = nil
+	onEnemyHit = nil
 end
 
 return CombatService

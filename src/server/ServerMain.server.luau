@@ -14,6 +14,7 @@ local Grenade = require(script.Parent:WaitForChild("ServerModules"):WaitForChild
 local EnergyShield = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("EnergyShield"))
 local EMPPulse = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("EMPPulse"))
 local Turret = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("Turret"))
+local Fire = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("Attributes"):WaitForChild("Fire"))
 
 -- Wire service communication here to avoid mutual require dependencies.
 PlayerStateService.Init()
@@ -21,7 +22,8 @@ EnergyShield.Init()
 SpecialEquipmentService.Init()
 ProgressionService.Init()
 ExperienceOrbService.Init()
-CombatService.Init(EnemyService.ApplyDamage)
+Fire.Init(EnemyService.ApplyStatusEffect)
+CombatService.Init(EnemyService.ApplyDamage, Fire.OnHit)
 EnemyService.Init(ExperienceOrbService.SpawnOrb)
 Grenade.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyDamage)
 EMPPulse.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyEMP)

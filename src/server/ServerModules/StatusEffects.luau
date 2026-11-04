@@ -30,6 +30,7 @@ local function Valid(effect: Types.Definition): boolean
 	local stack = if effect.Stack == nil then 1 else effect.Stack
 	local damage = if effect.TickDamage == nil then 0 else effect.TickDamage
 	local slow = if effect.SlowRate == nil then 0 else effect.SlowRate
+	if effect.StackMode ~= nil and effect.StackMode ~= "Add" and effect.StackMode ~= "Refresh" then return false end
 	if not Finite(stack) or stack < 1 or stack > Config.MaxStack or stack % 1 ~= 0
 		or not Finite(damage) or damage < 0 or not Finite(slow) or slow < 0 or slow > 1
 		or not Finite(damage * Config.MaxStack * math.ceil(Config.MaxDuration / Config.TickInterval)) then return false end
@@ -93,7 +94,8 @@ function StatusEffects.new(damage: DamageHandler): Controller
 				}
 				table.insert(entries, current)
 			end
-			current.Stack = math.min(Config.MaxStack, current.Stack + (effect.Stack or 1))
+			current.Stack = if effect.StackMode == "Refresh" then (effect.Stack or 1)
+				else math.min(Config.MaxStack, current.Stack + (effect.Stack or 1))
 			current.Duration = effect.Duration
 			current.ExpiresAt = now + effect.Duration
 			current.TickDamage = effect.TickDamage or 0

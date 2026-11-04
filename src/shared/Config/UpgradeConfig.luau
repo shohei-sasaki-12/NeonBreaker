@@ -19,6 +19,11 @@ export type UpgradeDefinition = {
 }
 
 local definitions: { [string]: UpgradeDefinition } = {
+	Fire = {
+		Id = "Fire", DisplayName = "Fire", Description = "Weapon hits may inflict Burn. Higher levels improve chance, damage or duration.",
+		Category = "Weapon", MaxLevel = 3, Weight = 1,
+		Requirements = {}, ExcludedWeapons = {}, EffectType = "FireLevel", EffectValue = 1,
+	},
 	GrenadeDamageUp = {
 		Id = "GrenadeDamageUp", DisplayName = "Grenade Damage Up", Description = "Grenade damage +10% per level",
 		Category = "Special", MaxLevel = 5, Weight = 1, SpecialRequirement = "Grenade",
@@ -89,6 +94,7 @@ local ids = table.freeze({
 	"DamageUp", "FireRateUp", "MagazineUp", "RapidFire", "Stabilization",
 	"ExtraPellets", "TightSpread", "CriticalChanceUp", "Ricochet",
 	"GrenadeDamageUp", "GrenadeRadiusUp", "GrenadeCooldownDown", "MultiGrenade",
+	"Fire",
 })
 for _, definition in definitions do
 	table.freeze(definition.Requirements)
