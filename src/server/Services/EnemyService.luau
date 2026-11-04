@@ -12,10 +12,13 @@ local CombatService = require(script.Parent:WaitForChild("CombatService"))
 local MeleeAI = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("MeleeAI"))
 local EnemyStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("EnemyStatus"))
 local EMPConfig = require(ConfigFolder:WaitForChild("EMPConfig"))
+local StatusEffects = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("StatusEffects"))
+local StatusEffectTypes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Types"):WaitForChild("StatusEffect"))
 
 type EnemyRecord = {
 	AI: MeleeAI.Controller,
 	Status: EnemyStatus.Controller,
+	Effects: StatusEffects.Controller,
 	EMPShieldHandler: ((number) -> ())?,
 	Humanoid: Humanoid,
 	Active: boolean,
@@ -42,6 +45,7 @@ local spawnExperienceOrb: OrbSpawner? = nil
 local function StopAI(record: EnemyRecord)
 	if record.Active then
 		record.Active = false
+		record.Effects.Destroy()
 		record.Status.Destroy()
 		record.AI.Destroy()
 	end
@@ -100,6 +104,36 @@ function EnemyService.ApplyDamage(model: Model, amount: number, attacker: Player
 		record.Humanoid.Health = record.Health
 	end
 	return true
+end
+
+local function GetLivingRecord(model: Model): EnemyRecord?
+	local record = records[model]
+	if not started or not record or record.Dead or not container or not model:IsDescendantOf(container)
+		or not CollectionService:HasTag(model, "Enemy") or record.Health <= 0 or record.Humanoid.Health <= 0 then return nil end
+	return record
+end
+
+-- Trusted server APIs only: no Remote exposes effect IDs, damage, stacks or duration.
+function EnemyService.ApplyStatusEffect(model: Model, effect: StatusEffectTypes.Definition): boolean
+	assert(RunService:IsServer(), "Enemy status effects must be applied on the server")
+	local record = GetLivingRecord(model)
+	if not record or not record.Effects.Apply(effect) or records[model] ~= record then return false end
+	record.Status.Update(record.Effects.Update())
+	return true
+end
+
+function EnemyService.RemoveStatusEffect(model: Model, effectId: string, sourcePlayer: Player?): boolean
+	assert(RunService:IsServer(), "Enemy status effects must be removed on the server")
+	local record = GetLivingRecord(model)
+	if not record or not record.Effects.Remove(effectId, sourcePlayer) then return false end
+	local slow = record.Effects.Update()
+	if records[model] == record then record.Status.Update(slow) end
+	return true
+end
+
+function EnemyService.GetStatusEffects(model: Model): { StatusEffectTypes.Snapshot }
+	local record = GetLivingRecord(model)
+	return if record then record.Effects.GetEffects() else table.freeze({})
 end
 
 -- Future enemy shield controllers register their server-owned durability damage API here.
@@ -170,6 +204,9 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	local record: EnemyRecord = {
 		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId,
 		Status = EnemyStatus.new(model, humanoid, config), EMPShieldHandler = nil,
+		Effects = StatusEffects.new(function(amount: number, sourcePlayer: Player?): boolean
+			return EnemyService.ApplyDamage(model, amount, sourcePlayer)
+		end),
 		Health = config.MaxHP, Dead = false, ExperienceReward = config.ExperienceReward, Connections = {},
 	}
 	records[model] = record
@@ -249,7 +286,9 @@ function EnemyService.Init(spawnOrb: OrbSpawner)
 			elseif record.Humanoid.Health <= 0 then
 				FinishDeath(model, record, nil)
 			elseif record.Active then
-				if not record.Status.Update() then record.AI.Update(now) end
+				local slow = record.Effects.Update()
+				-- A tick can kill/despawn this enemy and destroy its controllers.
+				if records[model] == record and not record.Status.Update(slow) then record.AI.Update(now) end
 			end
 		end
 	end)

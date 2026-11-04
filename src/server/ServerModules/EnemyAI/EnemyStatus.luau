@@ -5,10 +5,11 @@ local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("EMPConfig"))
 local EnemyConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("EnemyConfig"))
+local StatusConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("StatusEffectConfig"))
 
 export type Controller = {
 	ApplyEMP: () -> boolean,
-	Update: () -> boolean, -- true means AI must skip movement and attacks.
+	Update: (slowRate: number?) -> boolean, -- true means AI must skip movement and attacks.
 	Destroy: () -> (),
 }
 
@@ -19,17 +20,21 @@ function EnemyStatus.new(model: Model, humanoid: Humanoid, config: EnemyConfig.E
 	local slowedUntil = 0
 	local active = true
 	local movementChanged = false
+	local commonSlowRate = 0
 	local function IsBoss(): boolean
 		-- Boss tags also protect future boss rigs whose config has not declared IsBoss yet.
 		return config.IsBoss == true or CollectionService:HasTag(model, "Boss")
 	end
-	local function Update(): boolean
+	local function Update(slowRate: number?): boolean
 		if not active then return false end
+		if slowRate ~= nil then commonSlowRate = slowRate end
 		local now = Workspace:GetServerTimeNow()
 		local stunned = not IsBoss() and now < stunnedUntil
 		local slowed = now < slowedUntil
-		if stunned or slowed then
-			humanoid.WalkSpeed = if stunned then 0 else config.MoveSpeed * Config.BossSpeedMultiplier
+		local multiplier = math.min(1 - commonSlowRate, if slowed then Config.BossSpeedMultiplier else 1)
+		if IsBoss() then multiplier = math.max(StatusConfig.BossMinimumSpeedMultiplier, multiplier) end
+		if stunned or multiplier < 1 then
+			humanoid.WalkSpeed = if stunned then 0 else config.MoveSpeed * multiplier
 			movementChanged = true
 		elseif movementChanged then
 			humanoid.WalkSpeed = config.MoveSpeed
