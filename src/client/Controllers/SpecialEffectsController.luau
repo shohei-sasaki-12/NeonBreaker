@@ -7,6 +7,7 @@ local Debris = game:GetService("Debris")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("GrenadeConfig"))
 local EMPConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("EMPConfig"))
+local TurretConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("TurretConfig"))
 
 local SpecialEffectsController = {}
 local connection: RBXScriptConnection? = nil
@@ -16,6 +17,24 @@ local started = false
 local function OnEffect(effect)
 	local folder = container
 	if not folder then return end
+	if effect.SpecialId == "Turret" and effect.Event == "Fired" then
+		local offset = effect.Position - effect.Origin
+		if offset.Magnitude <= 0 then return end
+		local tracer = Instance.new("Part")
+		tracer.Name = "TurretTracer"
+		tracer.Anchored = true
+		tracer.CanCollide = false
+		tracer.CanTouch = false
+		tracer.CanQuery = false
+		tracer.CastShadow = false
+		tracer.Material = Enum.Material.Neon
+		tracer.Color = TurretConfig.TracerColor
+		tracer.Size = Vector3.new(TurretConfig.TracerThickness, TurretConfig.TracerThickness, offset.Magnitude)
+		tracer.CFrame = CFrame.lookAt((effect.Origin + effect.Position) / 2, effect.Position)
+		tracer.Parent = folder
+		Debris:AddItem(tracer, TurretConfig.TracerDuration)
+		return
+	end
 	local effectConfig
 	if effect.SpecialId == "Grenade" and effect.Event == "Exploded" then
 		effectConfig = Config

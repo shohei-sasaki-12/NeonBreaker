@@ -10,6 +10,7 @@ local definitions: { [string]: SpecialDefinition } = {
 	Grenade = { SpecialId = "Grenade", Cooldown = 12, MaxLevel = 5 },
 	EnergyShield = { SpecialId = "EnergyShield", Cooldown = 20, MaxLevel = 5 },
 	EMPPulse = { SpecialId = "EMPPulse", Cooldown = 15, MaxLevel = 5 },
+	Turret = { SpecialId = "Turret", Cooldown = 18, MaxLevel = 5 },
 }
 for _, definition in definitions do table.freeze(definition) end
 table.freeze(definitions)
