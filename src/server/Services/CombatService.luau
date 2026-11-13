@@ -36,7 +36,7 @@ local random = Random.new()
 local started = false
 type EnemyDamageHandler = (model: Model, amount: number, attacker: Player) -> boolean
 local damageEnemy: EnemyDamageHandler? = nil
-type EnemyHitHandler = (Player, Model) -> boolean
+type EnemyHitHandler = (Player, Model, number, Vector3) -> boolean
 local onEnemyHit: EnemyHitHandler? = nil
 
 local function FindEnemyModel(instance: Instance): Model?
@@ -146,6 +146,7 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 	state.NextShotAt = math.max(now, state.NextShotAt) + config.FireInterval
 	local endpoints: { Vector3 } = {}
 	local hits: { [Model]: number } = {}
+	local hitPositions: { [Model]: Vector3 } = {}
 	local directions = Ballistics.GetDirections(direction, config.PelletCount or 1, config.Spread or 0, random)
 	for pellet, pelletDirection in directions do
 		local hit = Workspace:Raycast(origin, pelletDirection * config.Range, params)
@@ -155,7 +156,10 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 				print(string.format("[CombatService] %s hit %s (shot %d, pellet %d)", player.Name, hit.Instance.Name, shotId, pellet))
 			end
 			local enemy = FindEnemyModel(hit.Instance)
-			if enemy then hits[enemy] = (hits[enemy] or 0) + 1 end
+			if enemy then
+				hits[enemy] = (hits[enemy] or 0) + 1
+				hitPositions[enemy] = hit.Position
+			end
 		end
 	end
 	-- Resolve every pellet before damage can delete a killed enemy model.
@@ -174,7 +178,8 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 			end
 			if applyDamage(enemy, damage, player) then
 				local onHit = onEnemyHit
-				if onHit then onHit(player, enemy) end
+				local position = hitPositions[enemy]
+				if onHit and position then onHit(player, enemy, damage, position) end
 			end
 		end
 	end
