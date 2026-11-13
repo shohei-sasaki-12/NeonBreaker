@@ -9,7 +9,7 @@ local StatusConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChi
 
 export type Controller = {
 	ApplyEMP: () -> boolean,
-	Update: (slowRate: number?) -> boolean, -- true means AI must skip movement and attacks.
+	Update: (slowRate: number?, frozen: boolean?) -> boolean, -- true means AI must skip movement and attacks.
 	Destroy: () -> (),
 }
 
@@ -21,20 +21,23 @@ function EnemyStatus.new(model: Model, humanoid: Humanoid, config: EnemyConfig.E
 	local active = true
 	local movementChanged = false
 	local commonSlowRate = 0
+	local cryoFrozen = false
 	local function IsBoss(): boolean
 		-- Boss tags also protect future boss rigs whose config has not declared IsBoss yet.
 		return config.IsBoss == true or CollectionService:HasTag(model, "Boss")
 	end
-	local function Update(slowRate: number?): boolean
+	local function Update(slowRate: number?, frozen: boolean?): boolean
 		if not active then return false end
 		if slowRate ~= nil then commonSlowRate = slowRate end
+		if frozen ~= nil then cryoFrozen = frozen end
 		local now = Workspace:GetServerTimeNow()
 		local stunned = not IsBoss() and now < stunnedUntil
+		local immobilized = stunned or (cryoFrozen and not IsBoss())
 		local slowed = now < slowedUntil
 		local multiplier = math.min(1 - commonSlowRate, if slowed then Config.BossSpeedMultiplier else 1)
 		if IsBoss() then multiplier = math.max(StatusConfig.BossMinimumSpeedMultiplier, multiplier) end
-		if stunned or multiplier < 1 then
-			humanoid.WalkSpeed = if stunned then 0 else config.MoveSpeed * multiplier
+		if immobilized or multiplier < 1 then
+			humanoid.WalkSpeed = if immobilized then 0 else config.MoveSpeed * multiplier
 			movementChanged = true
 		elseif movementChanged then
 			humanoid.WalkSpeed = config.MoveSpeed
@@ -42,11 +45,11 @@ function EnemyStatus.new(model: Model, humanoid: Humanoid, config: EnemyConfig.E
 		end
 		model:SetAttribute("EMPStunnedUntil", if stunned then stunnedUntil else 0)
 		model:SetAttribute("EMPSlowedUntil", if slowed then slowedUntil else 0)
-		if stunned then
+		if immobilized then
 			local root = model.PrimaryPart
 			if root then humanoid:MoveTo(root.Position) end
 		end
-		return stunned
+		return immobilized
 	end
 	return {
 		ApplyEMP = function(): boolean

@@ -11,6 +11,7 @@ local AIConfig = require(ConfigFolder:WaitForChild("EnemyAIConfig"))
 local CombatService = require(script.Parent:WaitForChild("CombatService"))
 local MeleeAI = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("MeleeAI"))
 local EnemyStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("EnemyStatus"))
+local CryoStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("CryoStatus"))
 local EMPConfig = require(ConfigFolder:WaitForChild("EMPConfig"))
 local StatusEffects = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("StatusEffects"))
 local StatusEffectTypes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Types"):WaitForChild("StatusEffect"))
@@ -19,6 +20,7 @@ type EnemyRecord = {
 	AI: MeleeAI.Controller,
 	Status: EnemyStatus.Controller,
 	Effects: StatusEffects.Controller,
+	Cryo: CryoStatus.Controller,
 	EMPShieldHandler: ((number) -> ())?,
 	Humanoid: Humanoid,
 	Active: boolean,
@@ -46,6 +48,7 @@ local function StopAI(record: EnemyRecord)
 	if record.Active then
 		record.Active = false
 		record.Effects.Destroy()
+		record.Cryo.Destroy()
 		record.Status.Destroy()
 		record.AI.Destroy()
 	end
@@ -113,12 +116,32 @@ local function GetLivingRecord(model: Model): EnemyRecord?
 	return record
 end
 
+local function UpdateStatus(record: EnemyRecord): boolean
+	local slow = record.Effects.Update()
+	if record.Dead or not record.Active then return true end
+	local cryo = record.Cryo.Update()
+	return record.Status.Update(math.max(slow, cryo.SlowRate), cryo.IsFrozen)
+end
+
+function EnemyService.ApplyCryo(model: Model, level: number): boolean
+	assert(RunService:IsServer(), "Enemy cooling must be applied on the server")
+	local record = GetLivingRecord(model)
+	if not record or not record.Cryo.AddCooling(level) then return false end
+	UpdateStatus(record)
+	return true
+end
+
+function EnemyService.GetCryoState(model: Model): CryoStatus.Snapshot?
+	local record = GetLivingRecord(model)
+	return if record then record.Cryo.Update() else nil
+end
+
 -- Trusted server APIs only: no Remote exposes effect IDs, damage, stacks or duration.
 function EnemyService.ApplyStatusEffect(model: Model, effect: StatusEffectTypes.Definition): boolean
 	assert(RunService:IsServer(), "Enemy status effects must be applied on the server")
 	local record = GetLivingRecord(model)
 	if not record or not record.Effects.Apply(effect) or records[model] ~= record then return false end
-	record.Status.Update(record.Effects.Update())
+	UpdateStatus(record)
 	return true
 end
 
@@ -126,8 +149,7 @@ function EnemyService.RemoveStatusEffect(model: Model, effectId: string, sourceP
 	assert(RunService:IsServer(), "Enemy status effects must be removed on the server")
 	local record = GetLivingRecord(model)
 	if not record or not record.Effects.Remove(effectId, sourcePlayer) then return false end
-	local slow = record.Effects.Update()
-	if records[model] == record then record.Status.Update(slow) end
+	UpdateStatus(record)
 	return true
 end
 
@@ -204,6 +226,7 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	local record: EnemyRecord = {
 		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId,
 		Status = EnemyStatus.new(model, humanoid, config), EMPShieldHandler = nil,
+		Cryo = CryoStatus.new(model, config),
 		Effects = StatusEffects.new(function(amount: number, sourcePlayer: Player?): boolean
 			return EnemyService.ApplyDamage(model, amount, sourcePlayer)
 		end),
@@ -286,9 +309,9 @@ function EnemyService.Init(spawnOrb: OrbSpawner)
 			elseif record.Humanoid.Health <= 0 then
 				FinishDeath(model, record, nil)
 			elseif record.Active then
-				local slow = record.Effects.Update()
+				local blocked = UpdateStatus(record)
 				-- A tick can kill/despawn this enemy and destroy its controllers.
-				if records[model] == record and not record.Status.Update(slow) then record.AI.Update(now) end
+				if records[model] == record and not blocked then record.AI.Update(now) end
 			end
 		end
 	end)

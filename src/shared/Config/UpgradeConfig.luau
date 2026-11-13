@@ -19,6 +19,11 @@ export type UpgradeDefinition = {
 }
 
 local definitions: { [string]: UpgradeDefinition } = {
+	Cryo = {
+		Id = "Cryo", DisplayName = "Cryo", Description = "Weapon hits build cooling to Slow enemies. Lv3 can briefly Freeze normal enemies; bosses resist Freeze.",
+		Category = "Weapon", MaxLevel = 3, Weight = 1,
+		Requirements = {}, ExcludedWeapons = {}, EffectType = "CryoLevel", EffectValue = 1,
+	},
 	Electric = {
 		Id = "Electric", DisplayName = "Electric", Description = "Weapon hits may chain lightning to 1/2/3 additional enemies. Chain damage is reduced.",
 		Category = "Weapon", MaxLevel = 3, Weight = 1,
@@ -101,6 +106,7 @@ local ids = table.freeze({
 	"GrenadeDamageUp", "GrenadeRadiusUp", "GrenadeCooldownDown", "MultiGrenade",
 	"Fire",
 	"Electric",
+	"Cryo",
 })
 for _, definition in definitions do
 	table.freeze(definition.Requirements)

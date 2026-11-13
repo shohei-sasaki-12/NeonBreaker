@@ -16,6 +16,7 @@ local EMPPulse = require(script.Parent:WaitForChild("ServerModules"):WaitForChil
 local Turret = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("Turret"))
 local Fire = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("Attributes"):WaitForChild("Fire"))
 local Electric = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("Attributes"):WaitForChild("Electric"))
+local Cryo = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("Attributes"):WaitForChild("Cryo"))
 
 -- Wire service communication here to avoid mutual require dependencies.
 PlayerStateService.Init()
@@ -25,10 +26,12 @@ ProgressionService.Init()
 ExperienceOrbService.Init()
 Fire.Init(EnemyService.ApplyStatusEffect)
 Electric.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyDamage)
+Cryo.Init(EnemyService.ApplyCryo)
 CombatService.Init(EnemyService.ApplyDamage, function(player: Player, enemy: Model, damage: number, position: Vector3): boolean
 	local burned = Fire.OnHit(player, enemy)
+	local cooled = Cryo.OnHit(player, enemy)
 	local chained = Electric.OnHit(player, enemy, damage, position)
-	return burned or chained
+	return burned or cooled or chained
 end)
 EnemyService.Init(ExperienceOrbService.SpawnOrb)
 Grenade.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyDamage)
