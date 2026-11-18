@@ -89,7 +89,24 @@
         "$className": "Folder"
       },
       "SpawnPoints": {
-        "$className": "Folder"
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+        "DefaultNorth": {
+          "$className": "Part",
+          "$properties": { "Anchored": true, "CanCollide": false, "CanTouch": false, "CanQuery": false, "Transparency": 1, "Size": [1, 1, 1], "Position": [0, 0.5, -90] }
+        },
+        "DefaultSouth": {
+          "$className": "Part",
+          "$properties": { "Anchored": true, "CanCollide": false, "CanTouch": false, "CanQuery": false, "Transparency": 1, "Size": [1, 1, 1], "Position": [0, 0.5, 90] }
+        },
+        "DefaultEast": {
+          "$className": "Part",
+          "$properties": { "Anchored": true, "CanCollide": false, "CanTouch": false, "CanQuery": false, "Transparency": 1, "Size": [1, 1, 1], "Position": [90, 0.5, 0] }
+        },
+        "DefaultWest": {
+          "$className": "Part",
+          "$properties": { "Anchored": true, "CanCollide": false, "CanTouch": false, "CanQuery": false, "Transparency": 1, "Size": [1, 1, 1], "Position": [-90, 0.5, 0] }
+        }
       },
       "$properties": {
         "FilteringEnabled": true

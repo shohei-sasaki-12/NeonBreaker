@@ -1,8 +1,7 @@
 --!strict
 
 return table.freeze({
-	StartAfterSeconds = 360,
-	SpawnChance = 0.12,
+	ThreatCostMultiplier = 2,
 	HealthMultiplier = 2,
 	DamageMultiplier = 1.3,
 	MoveSpeedMultiplier = 1.1,
