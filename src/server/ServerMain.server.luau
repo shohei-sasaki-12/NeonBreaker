@@ -27,12 +27,12 @@ ExperienceOrbService.Init()
 Fire.Init(EnemyService.ApplyStatusEffect)
 Electric.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyDamage)
 Cryo.Init(EnemyService.ApplyCryo)
-CombatService.Init(EnemyService.ApplyDamage, function(player: Player, enemy: Model, damage: number, position: Vector3): boolean
+CombatService.Init(EnemyService.ApplyDamage, function(player: Player, enemy: Model, damage: number, position: Vector3, isBoss: boolean): boolean
 	local burned = Fire.OnHit(player, enemy)
 	local cooled = Cryo.OnHit(player, enemy)
-	local chained = Electric.OnHit(player, enemy, damage, position)
-	return burned or cooled or chained
-end)
+	local shocked = Electric.OnHit(player, enemy, damage, position, isBoss)
+	return burned or cooled or shocked
+end, EnemyService.IsBoss)
 EnemyService.Init(ExperienceOrbService.SpawnOrb)
 Grenade.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyDamage)
 EMPPulse.Init(EnemyService.GetEnemiesInRadius, EnemyService.ApplyEMP)

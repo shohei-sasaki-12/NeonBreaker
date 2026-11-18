@@ -13,6 +13,8 @@ local MeleeAI = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitF
 local EnemyStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("EnemyStatus"))
 local CryoStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("CryoStatus"))
 local EMPConfig = require(ConfigFolder:WaitForChild("EMPConfig"))
+local FireConfig = require(ConfigFolder:WaitForChild("FireConfig"))
+local BossResistance = require(ConfigFolder:WaitForChild("BossResistanceConfig"))
 local StatusEffects = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("StatusEffects"))
 local StatusEffectTypes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Types"):WaitForChild("StatusEffect"))
 
@@ -25,6 +27,7 @@ type EnemyRecord = {
 	Humanoid: Humanoid,
 	Active: boolean,
 	EnemyId: string,
+	Config: EnemyConfig.EnemyDefinition,
 	Health: number,
 	Dead: boolean,
 	ExperienceReward: number,
@@ -123,6 +126,11 @@ local function UpdateStatus(record: EnemyRecord): boolean
 	return record.Status.Update(math.max(slow, cryo.SlowRate), cryo.IsFrozen)
 end
 
+function EnemyService.IsBoss(model: Model): boolean
+	local record = GetLivingRecord(model)
+	return record ~= nil and EnemyStatus.IsBoss(model, record.Config)
+end
+
 function EnemyService.ApplyCryo(model: Model, level: number): boolean
 	assert(RunService:IsServer(), "Enemy cooling must be applied on the server")
 	local record = GetLivingRecord(model)
@@ -140,7 +148,14 @@ end
 function EnemyService.ApplyStatusEffect(model: Model, effect: StatusEffectTypes.Definition): boolean
 	assert(RunService:IsServer(), "Enemy status effects must be applied on the server")
 	local record = GetLivingRecord(model)
-	if not record or not record.Effects.Apply(effect) or records[model] ~= record then return false end
+	if not record then return false end
+	if typeof(effect) == "table" and effect.EffectId == FireConfig.EffectId
+		and typeof(effect.TickDamage) == "number" and EnemyStatus.IsBoss(model, record.Config) then
+		local adjusted = table.clone(effect)
+		adjusted.TickDamage = effect.TickDamage * BossResistance.FireTickDamageMultiplier
+		effect = adjusted
+	end
+	if not record.Effects.Apply(effect) or records[model] ~= record then return false end
 	UpdateStatus(record)
 	return true
 end
@@ -224,7 +239,7 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	CollectionService:AddTag(model, "Enemy")
 	local ai = factory(model, config, CombatService.ApplyEnemyDamage)
 	local record: EnemyRecord = {
-		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId,
+		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId, Config = config,
 		Status = EnemyStatus.new(model, humanoid, config), EMPShieldHandler = nil,
 		Cryo = CryoStatus.new(model, config),
 		Effects = StatusEffects.new(function(amount: number, sourcePlayer: Player?): boolean

@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("ElectricConfig"))
+local BossResistance = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("BossResistanceConfig"))
 local PlayerStateService = require(script.Parent.Parent.Parent:WaitForChild("Services"):WaitForChild("PlayerStateService"))
 local Validation = require(script.Parent.Parent:WaitForChild("CombatValidation"))
 
@@ -31,7 +32,7 @@ local function Params(player: Player): RaycastParams
 end
 
 -- Only validated weapon hits enter here. Chain damage calls EnemyService directly.
-function Electric.OnHit(player: Player, firstEnemy: Model, originalDamage: number, position: Vector3): boolean
+function Electric.OnHit(player: Player, firstEnemy: Model, originalDamage: number, position: Vector3, isBoss: boolean?): boolean
 	assert(RunService:IsServer(), "Electric must be processed on the server")
 	local query, damage = queryEnemies, applyDamage
 	local state = PlayerStateService.GetState(player)
@@ -39,6 +40,9 @@ function Electric.OnHit(player: Player, firstEnemy: Model, originalDamage: numbe
 		or not Validation.IsFinite(originalDamage) or originalDamage <= 0 or not Validation.IsVector(position) then return false end
 	local count = Config.GetChainCount(state.Upgrades.Electric or 0)
 	if count == 0 or random:NextNumber() >= Config.Chance then return false end
+	if isBoss then
+		return damage(firstEnemy, originalDamage * BossResistance.ElectricBonusDamageMultiplier, player)
+	end
 	local visited: { [Model]: boolean } = { [firstEnemy] = true }
 	local currentPosition = position -- Captured before direct damage can delete the first enemy.
 	local chainDamage = originalDamage * Config.DamageMultiplier

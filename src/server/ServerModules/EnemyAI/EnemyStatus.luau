@@ -15,6 +15,10 @@ export type Controller = {
 
 local EnemyStatus = {}
 
+function EnemyStatus.IsBoss(model: Model, config: EnemyConfig.EnemyDefinition): boolean
+	return config.IsBoss == true or CollectionService:HasTag(model, "Boss")
+end
+
 function EnemyStatus.new(model: Model, humanoid: Humanoid, config: EnemyConfig.EnemyDefinition): Controller
 	local stunnedUntil = 0
 	local slowedUntil = 0
@@ -22,20 +26,17 @@ function EnemyStatus.new(model: Model, humanoid: Humanoid, config: EnemyConfig.E
 	local movementChanged = false
 	local commonSlowRate = 0
 	local cryoFrozen = false
-	local function IsBoss(): boolean
-		-- Boss tags also protect future boss rigs whose config has not declared IsBoss yet.
-		return config.IsBoss == true or CollectionService:HasTag(model, "Boss")
-	end
 	local function Update(slowRate: number?, frozen: boolean?): boolean
 		if not active then return false end
 		if slowRate ~= nil then commonSlowRate = slowRate end
 		if frozen ~= nil then cryoFrozen = frozen end
 		local now = Workspace:GetServerTimeNow()
-		local stunned = not IsBoss() and now < stunnedUntil
-		local immobilized = stunned or (cryoFrozen and not IsBoss())
+		local isBoss = EnemyStatus.IsBoss(model, config)
+		local stunned = not isBoss and now < stunnedUntil
+		local immobilized = stunned or (cryoFrozen and not isBoss)
 		local slowed = now < slowedUntil
 		local multiplier = math.min(1 - commonSlowRate, if slowed then Config.BossSpeedMultiplier else 1)
-		if IsBoss() then multiplier = math.max(StatusConfig.BossMinimumSpeedMultiplier, multiplier) end
+		if isBoss then multiplier = math.max(StatusConfig.BossMinimumSpeedMultiplier, multiplier) end
 		if immobilized or multiplier < 1 then
 			humanoid.WalkSpeed = if immobilized then 0 else config.MoveSpeed * multiplier
 			movementChanged = true
@@ -55,7 +56,7 @@ function EnemyStatus.new(model: Model, humanoid: Humanoid, config: EnemyConfig.E
 		ApplyEMP = function(): boolean
 			if not active or humanoid.Health <= 0 or config.IsMechanical ~= true then return false end
 			local now = Workspace:GetServerTimeNow()
-			if IsBoss() then
+			if EnemyStatus.IsBoss(model, config) then
 				slowedUntil = math.max(slowedUntil, now + Config.BossSlowDuration)
 			else
 				-- Refresh from this hit, rather than adding durations for simultaneous pulses.

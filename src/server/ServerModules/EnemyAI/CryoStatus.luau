@@ -2,7 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local CollectionService = game:GetService("CollectionService")
+local EnemyStatus = require(script.Parent:WaitForChild("EnemyStatus"))
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("CryoConfig"))
 local EnemyConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("EnemyConfig"))
 
@@ -28,7 +28,7 @@ function CryoStatus.new(model: Model, config: EnemyConfig.EnemyDefinition): Cont
 	local freezeUntil = 0
 	local immuneUntil = 0
 	local function IsBoss(): boolean
-		return config.IsBoss == true or CollectionService:HasTag(model, "Boss")
+		return EnemyStatus.IsBoss(model, config)
 	end
 	local function Update(): Snapshot
 		local now = Workspace:GetServerTimeNow()

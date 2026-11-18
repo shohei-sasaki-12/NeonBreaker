@@ -36,8 +36,10 @@ local random = Random.new()
 local started = false
 type EnemyDamageHandler = (model: Model, amount: number, attacker: Player) -> boolean
 local damageEnemy: EnemyDamageHandler? = nil
-type EnemyHitHandler = (Player, Model, number, Vector3) -> boolean
+type EnemyHitHandler = (Player, Model, number, Vector3, boolean) -> boolean
+type BossCheck = (Model) -> boolean
 local onEnemyHit: EnemyHitHandler? = nil
+local isEnemyBoss: BossCheck? = nil
 
 local function FindEnemyModel(instance: Instance): Model?
 	local current: Instance? = instance
@@ -176,10 +178,13 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 						player.Name, damage, shotId, tostring(critical)))
 				end
 			end
+			-- Capture before damage: a lethal shot removes the enemy's server record.
+			local bossCheck = isEnemyBoss
+			local isBoss = bossCheck ~= nil and bossCheck(enemy)
 			if applyDamage(enemy, damage, player) then
 				local onHit = onEnemyHit
 				local position = hitPositions[enemy]
-				if onHit and position then onHit(player, enemy, damage, position) end
+				if onHit and position then onHit(player, enemy, damage, position, isBoss) end
 			end
 		end
 	end
@@ -281,7 +286,7 @@ function CombatService.ApplyEnemyDamage(player: Player, amount: number): boolean
 	return true
 end
 
-function CombatService.Init(applyEnemyDamage: EnemyDamageHandler, hitHandler: EnemyHitHandler?)
+function CombatService.Init(applyEnemyDamage: EnemyDamageHandler, hitHandler: EnemyHitHandler?, bossCheck: BossCheck?)
 	if started then
 		return
 	end
@@ -301,6 +306,7 @@ function CombatService.Init(applyEnemyDamage: EnemyDamageHandler, hitHandler: En
 	started = true
 	damageEnemy = applyEnemyDamage
 	onEnemyHit = hitHandler
+	isEnemyBoss = bossCheck
 	stateRemote = snapshot
 	shotRemote = resolved
 	-- Subscribe before scanning, covering both new joins and already-created states.
@@ -362,6 +368,7 @@ function CombatService.Destroy()
 	shotRemote = nil
 	damageEnemy = nil
 	onEnemyHit = nil
+	isEnemyBoss = nil
 end
 
 return CombatService
