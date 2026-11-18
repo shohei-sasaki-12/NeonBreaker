@@ -34,6 +34,11 @@ local function InputBlocked(): boolean
 	return InputController.IsUIBlocked() or not focused or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() ~= nil
 end
 
+function CameraController.GetAimState(): (boolean, boolean)
+	local canAim = started and trackedRoot ~= nil and savedCamera == Workspace.CurrentCamera and not InputBlocked()
+	return canAim, canAim and aiming
+end
+
 function CameraController.AddRecoil(degrees: number)
 	if started and not InputBlocked() then
 		pitch = math.clamp(pitch + math.rad(degrees), math.rad(Config.MinPitch), math.rad(Config.MaxPitch))
