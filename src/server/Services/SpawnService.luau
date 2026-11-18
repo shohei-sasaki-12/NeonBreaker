@@ -5,6 +5,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SpawnConfig"))
+local SharedConfig = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
+local StageConfig = require(SharedConfig:WaitForChild("StageConfig"))
+local EliteConfig = require(SharedConfig:WaitForChild("EliteConfig"))
+local EnemyConfig = require(SharedConfig:WaitForChild("EnemyConfig"))
 local EnemyService = require(script.Parent:WaitForChild("EnemyService"))
 local StageService = require(script.Parent:WaitForChild("StageService"))
 
@@ -29,10 +33,10 @@ local function GetPlayerPositions(): { Vector3 }
 	return positions
 end
 
-local function ChooseSpawn(positions: { Vector3 }): CFrame?
+local function ChooseSpawn(positions: { Vector3 }): BasePart?
 	local folder = spawnPoints
 	if not folder then return nil end
-	local candidates: { CFrame } = {}
+	local candidates: { BasePart } = {}
 	for _, point in folder:GetChildren() do
 		if not point:IsA("BasePart") or point:GetAttribute("Enabled") == false
 			or point:GetAttribute("BossOnly") == true then
@@ -46,7 +50,7 @@ local function ChooseSpawn(positions: { Vector3 }): CFrame?
 				break
 			end
 		end
-		if safe then table.insert(candidates, location) end
+		if safe then table.insert(candidates, point) end
 	end
 	return if #candidates > 0 then candidates[random:NextInteger(1, #candidates)] else nil
 end
@@ -69,10 +73,17 @@ local function Update()
 	if EnemyService.GetEnemyCount() >= Config.MaxEnemies then return end
 	local positions = GetPlayerPositions()
 	if #positions == 0 then return end
-	local location = ChooseSpawn(positions)
-	if location then
-		EnemyService.SpawnEnemy(Config.EnemyId, location)
-	end
+	local point = ChooseSpawn(positions)
+	if not point then return end
+	local requestedEnemy = point:GetAttribute("EnemyId")
+	local enemyId = if typeof(requestedEnemy) == "string" and EnemyConfig.GetEnemyConfig(requestedEnemy)
+		then requestedEnemy else Config.EnemyPool[random:NextInteger(1, #Config.EnemyPool)]
+	local elapsed = StageConfig.RunningDuration - stage.RemainingSeconds
+	local forcedElite = point:GetAttribute("IsElite")
+	local elite = if typeof(forcedElite) == "boolean" then forcedElite
+		else elapsed >= EliteConfig.StartAfterSeconds and random:NextNumber() < EliteConfig.SpawnChance
+	local location = point.CFrame + Vector3.new(0, Config.SpawnHeightOffset, 0)
+	EnemyService.SpawnEnemy(enemyId, location, elite)
 end
 
 function SpawnService.Init()

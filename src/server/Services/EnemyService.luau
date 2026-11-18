@@ -10,6 +10,15 @@ local EnemyConfig = require(ConfigFolder:WaitForChild("EnemyConfig"))
 local AIConfig = require(ConfigFolder:WaitForChild("EnemyAIConfig"))
 local CombatService = require(script.Parent:WaitForChild("CombatService"))
 local MeleeAI = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("MeleeAI"))
+local AIFolder = script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI")
+local RangedAI = require(AIFolder:WaitForChild("RangedAI"))
+local ChargeAI = require(AIFolder:WaitForChild("ChargeAI"))
+local SlamAI = require(AIFolder:WaitForChild("SlamAI"))
+local SupportAI = require(AIFolder:WaitForChild("SupportAI"))
+local EnemyArmor = require(AIFolder:WaitForChild("EnemyArmor"))
+local EnemyAttacks = require(AIFolder:WaitForChild("EnemyAttacks"))
+local EnemyProjectiles = require(AIFolder:WaitForChild("EnemyProjectiles"))
+local EliteConfig = require(ConfigFolder:WaitForChild("EliteConfig"))
 local EnemyStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("EnemyStatus"))
 local CryoStatus = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("EnemyAI"):WaitForChild("CryoStatus"))
 local EMPConfig = require(ConfigFolder:WaitForChild("EMPConfig"))
@@ -20,6 +29,8 @@ local StatusEffectTypes = require(ReplicatedStorage:WaitForChild("Shared"):WaitF
 
 type EnemyRecord = {
 	AI: MeleeAI.Controller,
+	Armor: EnemyArmor.Controller?,
+	EliteAbility: string?,
 	Status: EnemyStatus.Controller,
 	Effects: StatusEffects.Controller,
 	Cryo: CryoStatus.Controller,
@@ -36,7 +47,11 @@ type EnemyRecord = {
 
 local aiFactories: { [string]: (Model, EnemyConfig.EnemyDefinition, (Player, number) -> boolean) -> MeleeAI.Controller } = {
 	Melee = MeleeAI.new,
+	Ranged = RangedAI.new,
+	Charge = ChargeAI.new,
+	Slam = SlamAI.new,
 }
+local random = Random.new()
 local records: { [Model]: EnemyRecord } = {}
 local container: Folder? = nil
 local templates: Folder? = nil
@@ -82,6 +97,10 @@ local function FinishDeath(model: Model, record: EnemyRecord, attacker: Player?)
 	local credit = if attacker then " by " .. attacker.Name else ""
 	print("[EnemyService] Defeated " .. record.EnemyId .. credit)
 	model:Destroy()
+	if record.EliteAbility == "ExplosionOnDeath" then
+		EnemyAttacks.ShowArea(deathPosition, EliteConfig.ExplosionRadius, EliteConfig.ExplosionLifetime, EliteConfig.OutlineColor)
+		EnemyAttacks.DamageArea(deathPosition, EliteConfig.ExplosionRadius, EliteConfig.ExplosionDamage, CombatService.ApplyEnemyDamage)
+	end
 	local spawnOrb = spawnExperienceOrb
 	if spawnOrb and record.ExperienceReward > 0 then
 		spawnOrb(deathPosition, record.ExperienceReward)
@@ -89,7 +108,7 @@ local function FinishDeath(model: Model, record: EnemyRecord, attacker: Player?)
 	return true
 end
 
-function EnemyService.ApplyDamage(model: Model, amount: number, attacker: Player?): boolean
+function EnemyService.ApplyDamage(model: Model, amount: number, attacker: Player?, origin: Vector3?): boolean
 	assert(RunService:IsServer(), "Enemy damage must run on the server")
 	local record = records[model]
 	local destination = container
@@ -103,7 +122,10 @@ function EnemyService.ApplyDamage(model: Model, amount: number, attacker: Player
 		FinishDeath(model, record, nil)
 		return false
 	end
-	record.Health = math.max(0, record.Health - amount)
+	local armor = record.Armor
+	local remaining = if armor then armor.Absorb(amount, origin) else amount
+	if remaining <= 0 then return true end
+	record.Health = math.max(0, record.Health - remaining)
 	if record.Health <= 0 then
 		FinishDeath(model, record, attacker)
 	else
@@ -117,6 +139,27 @@ local function GetLivingRecord(model: Model): EnemyRecord?
 	if not started or not record or record.Dead or not container or not model:IsDescendantOf(container)
 		or not CollectionService:HasTag(model, "Enemy") or record.Health <= 0 or record.Humanoid.Health <= 0 then return nil end
 	return record
+end
+
+function EnemyService.Heal(model: Model, amount: number): boolean
+	assert(RunService:IsServer(), "Enemy healing must run on the server")
+	local record = GetLivingRecord(model)
+	if not record or not (amount > 0 and amount < math.huge) or record.Health >= record.Config.MaxHP then return false end
+	record.Health = math.min(record.Config.MaxHP, record.Health + amount)
+	record.Humanoid.Health = record.Health
+	return true
+end
+
+-- Callers supply desired velocity change in studs/sec. Resist before converting to impulse.
+function EnemyService.ApplyKnockback(model: Model, velocityDelta: Vector3): boolean
+	assert(RunService:IsServer(), "Enemy knockback must run on the server")
+	local record = GetLivingRecord(model)
+	local root = model.PrimaryPart
+	local magnitude = velocityDelta.Magnitude
+	if not record or not root or not (magnitude > 0 and magnitude < math.huge) then return false end
+	local resistance = record.Config.KnockbackResistance or 0
+	root:ApplyImpulse(velocityDelta * (root.AssemblyMass * (1 - resistance)))
+	return true
 end
 
 local function UpdateStatus(record: EnemyRecord): boolean
@@ -199,17 +242,33 @@ function EnemyService.ApplyEMP(model: Model): boolean
 	return true
 end
 
-function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
+function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame, isElite: boolean?): Model?
 	assert(started, "Call EnemyService.Init before spawning enemies")
 	local destination = container
 	local source = templates
-	local config = EnemyConfig.GetEnemyConfig(enemyId)
-	if not destination or not source or not config then
+	local definition = EnemyConfig.GetEnemyConfig(enemyId)
+	if not destination or not source or not definition then
 		return nil
+	end
+	local config = definition
+	local ability: string? = nil
+	local scale = config.Scale or 1
+	if isElite and not definition.IsBoss then
+		local elite = table.clone(definition)
+		elite.MaxHP *= EliteConfig.HealthMultiplier
+		elite.Damage *= EliteConfig.DamageMultiplier
+		elite.MoveSpeed *= EliteConfig.MoveSpeedMultiplier
+		elite.ExperienceReward *= EliteConfig.ExperienceMultiplier
+		config = elite
+		scale *= EliteConfig.ScaleMultiplier
+		ability = EliteConfig.Abilities[random:NextInteger(1, #EliteConfig.Abilities)]
 	end
 	local factory = aiFactories[config.AIType]
 	local template = source:FindFirstChild(enemyId)
-	if not factory or not template or not template:IsA("Model") then
+	if not template and config.FallbackTemplate then
+		template = source:FindFirstChild(config.FallbackTemplate)
+	end
+	if (not factory and config.AIType ~= "Support") or not template or not template:IsA("Model") then
 		warn("[EnemyService] Missing model or AI for " .. enemyId)
 		return nil
 	end
@@ -222,7 +281,34 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 		return nil
 	end
 	model.PrimaryPart = root
+	model.Name = enemyId
 	model:SetAttribute("EnemyId", config.EnemyId)
+	model:SetAttribute("IsElite", ability ~= nil)
+	local color = config.Color
+	if color then
+		for _, part in model:GetDescendants() do
+			if part:IsA("BasePart") and part ~= root then part.Color = color end
+		end
+	end
+	if scale ~= 1 then model:ScaleTo(scale) end
+	local densityMultiplier = config.RootDensityMultiplier
+	if densityMultiplier then
+		local physics = root.CurrentPhysicalProperties
+		root.CustomPhysicalProperties = PhysicalProperties.new(
+			physics.Density * densityMultiplier, physics.Friction, physics.Elasticity,
+			physics.FrictionWeight, physics.ElasticityWeight
+		)
+	end
+	if ability then
+		model:SetAttribute("EliteAbility", ability)
+		local highlight = Instance.new("Highlight")
+		highlight.Name = "EliteOutline"
+		highlight.OutlineColor = EliteConfig.OutlineColor
+		highlight.FillTransparency = 0.85
+		highlight.FillColor = EliteConfig.OutlineColor
+		highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+		highlight.Parent = model
+	end
 	humanoid.MaxHealth = config.MaxHP
 	humanoid.Health = config.MaxHP
 	humanoid.WalkSpeed = config.MoveSpeed
@@ -237,9 +323,17 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 	end
 	root:SetNetworkOwner(nil)
 	CollectionService:AddTag(model, "Enemy")
-	local ai = factory(model, config, CombatService.ApplyEnemyDamage)
+	local ai: MeleeAI.Controller
+	if factory then
+		ai = factory(model, config, CombatService.ApplyEnemyDamage)
+	else
+		ai = SupportAI.new(model, config, EnemyService.GetEnemiesInRadius, EnemyService.Heal)
+	end
+	local armor = if config.Shield or ability == "EnergyShield"
+		then EnemyArmor.new(model, root, config.Shield, ability == "EnergyShield") else nil
 	local record: EnemyRecord = {
-		AI = ai, Humanoid = humanoid, Active = true, EnemyId = config.EnemyId, Config = config,
+		AI = ai, Armor = armor, EliteAbility = ability,
+		Humanoid = humanoid, Active = true, EnemyId = config.EnemyId, Config = config,
 		Status = EnemyStatus.new(model, humanoid, config), EMPShieldHandler = nil,
 		Cryo = CryoStatus.new(model, config),
 		Effects = StatusEffects.new(function(amount: number, sourcePlayer: Player?): boolean
@@ -248,6 +342,7 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame): Model?
 		Health = config.MaxHP, Dead = false, ExperienceReward = config.ExperienceReward, Connections = {},
 	}
 	records[model] = record
+	if config.Shield and armor then EnemyService.RegisterEMPShieldHandler(model, armor.ApplyEMP) end
 	table.insert(record.Connections, humanoid.Died:Connect(function()
 		FinishDeath(model, record, nil)
 	end))
@@ -314,6 +409,7 @@ function EnemyService.Init(spawnOrb: OrbSpawner)
 	nextUpdateAt = 0
 	heartbeat = RunService.Heartbeat:Connect(function()
 		local now = os.clock()
+		EnemyProjectiles.Update(now)
 		if now < nextUpdateAt then
 			return
 		end
@@ -324,9 +420,16 @@ function EnemyService.Init(spawnOrb: OrbSpawner)
 			elseif record.Humanoid.Health <= 0 then
 				FinishDeath(model, record, nil)
 			elseif record.Active then
+				if record.Armor then record.Armor.Update() end
 				local blocked = UpdateStatus(record)
 				-- A tick can kill/despawn this enemy and destroy its controllers.
-				if records[model] == record and not blocked then record.AI.Update(now) end
+				if records[model] == record then
+					if not blocked then
+						record.AI.Update(now)
+					elseif record.AI.Interrupt then
+						record.AI.Interrupt()
+					end
+				end
 			end
 		end
 	end)
@@ -344,6 +447,7 @@ function EnemyService.Destroy()
 	for model in records do
 		EnemyService.DespawnEnemy(model)
 	end
+	EnemyProjectiles.Clear()
 	container = nil
 	templates = nil
 	spawnExperienceOrb = nil

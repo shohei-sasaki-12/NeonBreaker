@@ -7,6 +7,7 @@ local BaseEnemyAI = require(script.Parent:WaitForChild("BaseEnemyAI"))
 export type Controller = {
 	Update: (now: number) -> (),
 	Destroy: () -> (),
+	Interrupt: (() -> ())?,
 }
 
 local MeleeAI = {}

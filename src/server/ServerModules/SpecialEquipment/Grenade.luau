@@ -8,7 +8,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 local SpecialStats = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("SpecialStats"))
 local PlayerStateService = require(script.Parent.Parent.Parent:WaitForChild("Services"):WaitForChild("PlayerStateService"))
 
-type DamageHandler = (Model, number, Player?) -> boolean
+type DamageHandler = (Model, number, Player?, Vector3) -> boolean
 type EnemyQuery = (Vector3, number) -> { Model }
 type Projectile = {
 	Owner: Player, Character: Model, Part: Part, Position: Vector3, Velocity: Vector3,
@@ -54,7 +54,7 @@ local function Explode(projectile: Projectile, position: Vector3)
 			damaged[enemy] = true
 			local offset = root.Position - position
 			if Config.RequireBlastLineOfSight and offset.Magnitude > 0 and Workspace:Raycast(position, offset, params) then continue end
-			damage(enemy, projectile.Damage, projectile.Owner)
+			damage(enemy, projectile.Damage, projectile.Owner, position)
 		end
 	end
 	if effectsRemote then

@@ -10,7 +10,7 @@ local PlayerStateService = require(script.Parent.Parent.Parent:WaitForChild("Ser
 local Validation = require(script.Parent.Parent:WaitForChild("CombatValidation"))
 
 type EnemyQuery = (Vector3, number) -> { Model }
-type DamageHandler = (Model, number, Player?) -> boolean
+type DamageHandler = (Model, number, Player?, Vector3?) -> boolean
 local queryEnemies: EnemyQuery? = nil
 local applyDamage: DamageHandler? = nil
 local effectsRemote: RemoteEvent? = nil
@@ -64,7 +64,7 @@ function Electric.OnHit(player: Player, firstEnemy: Model, originalDamage: numbe
 		end
 		if not target or not targetPosition then break end
 		visited[target] = true -- Commit before damage/death callbacks; never revisit a model.
-		if not damage(target, chainDamage, player) then break end
+		if not damage(target, chainDamage, player, currentPosition) then break end
 		hitAny = true
 		if effectsRemote then
 			effectsRemote:FireAllClients({ SpecialId = "Electric", Event = "Chained", Origin = currentPosition, Position = targetPosition })

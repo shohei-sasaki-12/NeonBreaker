@@ -8,7 +8,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 local PlayerStateService = require(script.Parent.Parent.Parent:WaitForChild("Services"):WaitForChild("PlayerStateService"))
 
 type EnemyQuery = (Vector3, number) -> { Model }
-type DamageHandler = (Model, number, Player?) -> boolean
+type DamageHandler = (Model, number, Player?, Vector3) -> boolean
 type TurretState = {
 	Owner: Player, Character: Model, Model: Model, Barrel: Part, Origin: Vector3,
 	ExpiresAt: number, NextShotAt: number,
@@ -105,7 +105,7 @@ local function Update()
 			if (position - record.Origin).Magnitude > 0 then
 				record.Barrel.CFrame = CFrame.lookAt(record.Origin, position) * CFrame.new(0, 0, -Config.BarrelSize.Z / 2)
 			end
-			if damage(target, Config.Damage, player) and effectsRemote then
+			if damage(target, Config.Damage, player, record.Origin) and effectsRemote then
 				effectsRemote:FireAllClients({ SpecialId = "Turret", Event = "Fired", Origin = record.Origin, Position = position })
 			end
 		end

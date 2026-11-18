@@ -34,7 +34,7 @@ local stateRemote: RemoteEvent? = nil
 local shotRemote: RemoteEvent? = nil
 local random = Random.new()
 local started = false
-type EnemyDamageHandler = (model: Model, amount: number, attacker: Player) -> boolean
+type EnemyDamageHandler = (model: Model, amount: number, attacker: Player, origin: Vector3) -> boolean
 local damageEnemy: EnemyDamageHandler? = nil
 type EnemyHitHandler = (Player, Model, number, Vector3, boolean) -> boolean
 type BossCheck = (Model) -> boolean
@@ -181,7 +181,7 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 			-- Capture before damage: a lethal shot removes the enemy's server record.
 			local bossCheck = isEnemyBoss
 			local isBoss = bossCheck ~= nil and bossCheck(enemy)
-			if applyDamage(enemy, damage, player) then
+			if applyDamage(enemy, damage, player, origin) then
 				local onHit = onEnemyHit
 				local position = hitPositions[enemy]
 				if onHit and position then onHit(player, enemy, damage, position, isBoss) end
