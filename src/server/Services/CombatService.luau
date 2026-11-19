@@ -40,6 +40,7 @@ type EnemyHitHandler = (Player, Model, number, Vector3, boolean) -> boolean
 type BossCheck = (Model) -> boolean
 local onEnemyHit: EnemyHitHandler? = nil
 local isEnemyBoss: BossCheck? = nil
+local getHitMultiplier: ((Model, Instance) -> number)? = nil
 
 local function FindEnemyModel(instance: Instance): Model?
 	local current: Instance? = instance
@@ -159,7 +160,8 @@ local function OnFire(player: Player, weaponId: any, origin: any, direction: any
 			end
 			local enemy = FindEnemyModel(hit.Instance)
 			if enemy then
-				hits[enemy] = (hits[enemy] or 0) + 1
+				local multiplier = if getHitMultiplier then getHitMultiplier(enemy, hit.Instance) else 1
+				hits[enemy] = (hits[enemy] or 0) + multiplier
 				hitPositions[enemy] = hit.Position
 			end
 		end
@@ -286,7 +288,7 @@ function CombatService.ApplyEnemyDamage(player: Player, amount: number): boolean
 	return true
 end
 
-function CombatService.Init(applyEnemyDamage: EnemyDamageHandler, hitHandler: EnemyHitHandler?, bossCheck: BossCheck?)
+function CombatService.Init(applyEnemyDamage: EnemyDamageHandler, hitHandler: EnemyHitHandler?, bossCheck: BossCheck?, hitMultiplier: ((Model, Instance) -> number)?)
 	if started then
 		return
 	end
@@ -307,6 +309,7 @@ function CombatService.Init(applyEnemyDamage: EnemyDamageHandler, hitHandler: En
 	damageEnemy = applyEnemyDamage
 	onEnemyHit = hitHandler
 	isEnemyBoss = bossCheck
+	getHitMultiplier = hitMultiplier
 	stateRemote = snapshot
 	shotRemote = resolved
 	-- Subscribe before scanning, covering both new joins and already-created states.
@@ -369,6 +372,7 @@ function CombatService.Destroy()
 	damageEnemy = nil
 	onEnemyHit = nil
 	isEnemyBoss = nil
+	getHitMultiplier = nil
 end
 
 return CombatService

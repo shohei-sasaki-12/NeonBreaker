@@ -156,6 +156,15 @@ function EnemyService.Heal(model: Model, amount: number): boolean
 	return true
 end
 
+function EnemyService.GetHitMultiplier(model: Model, part: Instance): number
+	local record = GetLivingRecord(model)
+	local multiplier = if record then record.Config.WeakPointMultiplier else nil
+	if multiplier and part:IsA("BasePart") and part.CanQuery and part == model:FindFirstChild("TitanCore") then
+		return multiplier
+	end
+	return 1
+end
+
 -- Callers supply desired velocity change in studs/sec. Resist before converting to impulse.
 function EnemyService.ApplyKnockback(model: Model, velocityDelta: Vector3): boolean
 	assert(RunService:IsServer(), "Enemy knockback must run on the server")
@@ -399,6 +408,13 @@ function EnemyService.DespawnEnemy(model: Model)
 	end
 	StopTracking(model)
 	model:Destroy()
+end
+
+-- Encounter teardown differs from kills: no death abilities or XP.
+function EnemyService.ClearEncounter()
+	assert(RunService:IsServer(), "Encounter cleanup must run on the server")
+	for model in records do EnemyService.DespawnEnemy(model) end
+	EnemyProjectiles.Clear()
 end
 
 function EnemyService.Init(spawnOrb: OrbSpawner)

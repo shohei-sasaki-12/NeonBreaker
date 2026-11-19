@@ -3,11 +3,14 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Aegis = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("AegisWalkerConfig"))
+local Config = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
+local Aegis = require(Config:WaitForChild("AegisWalkerConfig"))
+local Titan = require(Config:WaitForChild("CoreTitanConfig"))
 
 type Snapshot = {
 	State: string, DropPodState: string?, AlarmActive: boolean,
 	MidBossState: string?, BossHealth: number?, BossMaxHealth: number?,
+	FinalBossState: string?, BossPhase: number?, CoreExposed: boolean?,
 }
 local StageAlertController = {}
 local gui: ScreenGui? = nil
@@ -73,11 +76,26 @@ function StageAlertController.Init()
 	bossLabel.TextSize = 14
 	bossLabel.Parent = bossPanel
 
+	local result = Instance.new("TextLabel")
+	result.Name = "Result"
+	result.Size = UDim2.fromScale(1, 1)
+	result.BackgroundColor3 = Color3.fromRGB(14, 20, 30)
+	result.BackgroundTransparency = 0.18
+	result.TextColor3 = Color3.fromRGB(103, 255, 192)
+	result.Font = Enum.Font.GothamBold
+	result.TextSize = 32
+	result.Visible = false
+	result.Parent = screen
+
 	connection = stateChanged.OnClientEvent:Connect(function(snapshot: Snapshot)
 		local alarm = snapshot.State == "Running" and snapshot.AlarmActive
 		local landing = snapshot.State == "Running" and snapshot.DropPodState == "Warning"
+		local finalWarning = snapshot.State == "Running" and snapshot.FinalBossState == "Warning"
 		local bossWarning = snapshot.State == "Running" and snapshot.MidBossState == "Warning"
-		if alarm then
+		if finalWarning then
+			label.Text = "WARNING  /  " .. Titan.DisplayName
+			label.BackgroundColor3 = Color3.fromRGB(120, 20, 33)
+		elseif alarm then
 			label.Text = "FINAL RUSH  /  ALERT"
 			label.BackgroundColor3 = Color3.fromRGB(120, 20, 33)
 		elseif landing then
@@ -88,15 +106,22 @@ function StageAlertController.Init()
 			label.BackgroundColor3 = Color3.fromRGB(120, 20, 33)
 		end
 		local health, maximum = snapshot.BossHealth, snapshot.BossMaxHealth
-		if snapshot.State == "Running" and snapshot.MidBossState == "Active" and health and maximum and maximum > 0 then
+		local finalBoss = snapshot.FinalBossState == "Active"
+		if snapshot.State == "Running" and (finalBoss or snapshot.MidBossState == "Active") and health and maximum and maximum > 0 then
 			bossPanel.Visible = true
-			bossLabel.Text = string.format("%s   %d / %d", Aegis.DisplayName, math.ceil(health), math.ceil(maximum))
+			local displayName = if finalBoss then string.format("%s  /  PHASE %d%s", Titan.DisplayName, snapshot.BossPhase or 1,
+				if snapshot.CoreExposed then "  /  CORE EXPOSED" else "") else Aegis.DisplayName
+			bossLabel.Text = string.format("%s   %d / %d", displayName, math.ceil(health), math.ceil(maximum))
 			fill.Size = UDim2.fromScale(math.clamp(health / maximum, 0, 1), 0.19)
 		else
 			bossPanel.Visible = false
 		end
-		label.Visible = alarm or landing or bossWarning
-		screen.Enabled = label.Visible or bossPanel.Visible
+		label.Visible = alarm or landing or bossWarning or finalWarning
+		result.Visible = snapshot.State == "Cleared" or snapshot.State == "Result"
+		if result.Visible then
+			result.Text = if snapshot.State == "Result" then "RESULT\nMISSION COMPLETE" else "STAGE CLEARED"
+		end
+		screen.Enabled = label.Visible or bossPanel.Visible or result.Visible
 	end)
 	screen.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 end

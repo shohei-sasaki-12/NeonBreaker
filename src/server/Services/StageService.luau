@@ -5,21 +5,24 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("StageConfig"))
+local Titan = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("CoreTitanConfig"))
 local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateService"))
 local DropPodEvent = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("DropPodEvent"))
 
-export type StageState = "Waiting" | "Countdown" | "Running" | "Cleared" | "GameOver"
+export type StageState = "Waiting" | "Countdown" | "Running" | "Cleared" | "GameOver" | "Result"
 export type MidBossState = "Pending" | "Warning" | "Active" | "Defeated" | "Unavailable"
 export type Snapshot = {
 	StageId: string, State: StageState, RemainingSeconds: number, EndsAt: number?,
 	ElapsedSeconds: number, PhaseId: Config.PhaseId?, DropPodState: DropPodEvent.State?, AlarmActive: boolean,
 	MidBossState: MidBossState?, BossHealth: number?, BossMaxHealth: number?,
+	FinalBossState: ("Warning" | "Active")?, BossPhase: number?, CoreExposed: boolean,
 }
 type Participant = { Character: Model, Humanoid: Humanoid, Eliminated: boolean }
 
 local changed = Instance.new("BindableEvent")
 local midBossRequested = Instance.new("BindableEvent")
-local StageService = { StateChanged = changed.Event, MidBossRequested = midBossRequested.Event }
+local finalBossRequested = Instance.new("BindableEvent")
+local StageService = { StateChanged = changed.Event, MidBossRequested = midBossRequested.Event, FinalBossRequested = finalBossRequested.Event }
 local state: StageState = "Waiting"
 local endsAt: number? = nil
 local runStartedAt: number? = nil
@@ -30,6 +33,10 @@ local midBossFired = false
 local midBossState: MidBossState? = nil
 local bossHealth: number? = nil
 local bossMaxHealth: number? = nil
+local finalBossState: ("Warning" | "Active")? = nil
+local bossPhase: number? = nil
+local coreExposed = false
+local resultAt: number? = nil
 local started = false
 local lastRemaining = -1
 local stateRemote: RemoteEvent? = nil
@@ -49,15 +56,16 @@ function StageService.GetState(): Snapshot
 		ElapsedSeconds = if runStartedAt then math.clamp(now - runStartedAt, 0, Config.RunningDuration) else 0,
 		PhaseId = if phase then phase.Id else nil,
 		DropPodState = podState,
-		AlarmActive = phase ~= nil and phase.Id == "FinalRush",
+		AlarmActive = finalBossState == nil and phase ~= nil and phase.Id == "FinalRush",
 		MidBossState = midBossState,
 		BossHealth = bossHealth, BossMaxHealth = bossMaxHealth,
+		FinalBossState = finalBossState, BossPhase = bossPhase, CoreExposed = coreExposed,
 	})
 end
 
 function StageService.ReportMidBoss(nextState: MidBossState, health: number?, maximum: number?): boolean
 	assert(RunService:IsServer(), "Mid-boss state must be set on the server")
-	if state ~= "Running" or not midBossFired or midBossState == "Defeated" then return false end
+	if state ~= "Running" or finalBossState or not midBossFired or midBossState == "Defeated" then return false end
 	if nextState == midBossState and health == bossHealth and maximum == bossMaxHealth then return false end
 	local stateChanged = nextState ~= midBossState
 	midBossState, bossHealth, bossMaxHealth = nextState, health, maximum
@@ -65,6 +73,16 @@ function StageService.ReportMidBoss(nextState: MidBossState, health: number?, ma
 	if stateRemote then stateRemote:FireAllClients(snapshot) end
 	if stateChanged then changed:Fire(snapshot) end
 	return true
+end
+
+function StageService.ReportFinalBoss(health: number, maximum: number, nextPhase: number, exposed: boolean)
+	assert(RunService:IsServer(), "Final boss state must be set on the server")
+	if state ~= "Running" or not finalBossState then return end
+	if finalBossState == "Active" and health == bossHealth and maximum == bossMaxHealth
+		and bossPhase == nextPhase and coreExposed == exposed then return end
+	finalBossState, bossHealth, bossMaxHealth = "Active", health, maximum
+	bossPhase, coreExposed = nextPhase, exposed
+	if stateRemote then stateRemote:FireAllClients(StageService.GetState()) end
 end
 
 local function DisconnectDeaths()
@@ -79,6 +97,7 @@ local function Transition(nextState: StageState, deadline: number?)
 	if nextState ~= "Running" then
 		runStartedAt, phase, podState = nil, nil, nil
 		midBossState, bossHealth, bossMaxHealth = nil, nil, nil
+		finalBossState, bossPhase, coreExposed = nil, nil, false
 		if dropPod then dropPod.Reset() end
 	end
 	local snapshot = StageService.GetState()
@@ -88,6 +107,14 @@ local function Transition(nextState: StageState, deadline: number?)
 	if stateRemote then stateRemote:FireAllClients(snapshot) end
 	if timerRemote then timerRemote:FireAllClients(snapshot) end
 	changed:Fire(snapshot)
+end
+
+function StageService.FinishFinalBoss(cleared: boolean): boolean
+	assert(RunService:IsServer(), "Final boss completion must run on the server")
+	if state ~= "Running" or not finalBossState or (cleared and finalBossState ~= "Active") then return false end
+	if cleared then resultAt = Workspace:GetServerTimeNow() + Titan.ClearDuration end
+	Transition(if cleared then "Cleared" else "GameOver", nil)
+	return true
 end
 
 local function GetReadyPlayers(): { [Player]: Participant }?
@@ -155,12 +182,9 @@ local function Update()
 			Transition("Running", now + Config.RunningDuration)
 		end
 	elseif state == "Running" then
-		-- A wipe takes precedence if the deadline and last death share an update.
 		if not HasLivingParticipant() then
 			Transition("GameOver", nil)
-		elseif endsAt and now >= endsAt then
-			Transition("Cleared", nil)
-		elseif runStartedAt then
+		elseif runStartedAt and not finalBossState then
 			local elapsed = math.max(0, now - runStartedAt)
 			local nextPhase = Config.GetPhase(elapsed)
 			local nextPodState = if dropPod then dropPod.Update(elapsed) else podState
@@ -170,12 +194,26 @@ local function Update()
 				midBossFired = true
 				midBossRequested:Fire(StageService.GetState())
 			end
+			if endsAt and now >= endsAt and (midBossState == "Defeated" or midBossState == "Unavailable") then
+				finalBossState = "Warning"
+				endsAt = nil
+				if dropPod then dropPod.Reset() end
+				podState = nil
+				local snapshot = StageService.GetState()
+				if stateRemote then stateRemote:FireAllClients(snapshot) end
+				changed:Fire(snapshot)
+				finalBossRequested:Fire(snapshot)
+				timelineChanged = false
+			end
 			if timelineChanged then
 				local snapshot = StageService.GetState()
 				if stateRemote then stateRemote:FireAllClients(snapshot) end
 				changed:Fire(snapshot)
 			end
 		end
+	elseif state == "Cleared" and resultAt and now >= resultAt then
+		resultAt = nil
+		Transition("Result", nil)
 	end
 	if state == "Countdown" or state == "Running" then
 		local snapshot = StageService.GetState()
@@ -237,6 +275,7 @@ function StageService.Destroy()
 	dropPod = nil
 	midBossFired = false
 	midBossState, bossHealth, bossMaxHealth = nil, nil, nil
+	finalBossState, bossPhase, coreExposed, resultAt = nil, nil, false, nil
 	lastRemaining = -1
 	PlayerStateService.SetWeaponSelectionLocked(false)
 end

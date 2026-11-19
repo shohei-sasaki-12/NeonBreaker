@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
 local Config = require(Shared:WaitForChild("AegisWalkerConfig"))
+local Titan = require(Shared:WaitForChild("CoreTitanConfig"))
 local SpawnConfig = require(Shared:WaitForChild("SpawnConfig"))
 local EnemyService = require(script.Parent:WaitForChild("EnemyService"))
 local StageService = require(script.Parent:WaitForChild("StageService"))
@@ -40,7 +41,7 @@ local function FindSpawn(living: { Player }): CFrame?
 	if points then
 		for _, point in points:GetChildren() do
 			if point:IsA("BasePart") and point:GetAttribute("BossOnly") == true
-				and point:GetAttribute("Enabled") ~= false then
+				and point:GetAttribute("Enabled") ~= false and point:GetAttribute("EnemyId") ~= Titan.Id then
 				return point.CFrame + Vector3.new(0, Config.SpawnOffset, 0)
 			end
 		end

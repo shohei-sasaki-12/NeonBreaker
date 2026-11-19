@@ -1,6 +1,7 @@
 --!strict
 
 local Aegis = require(script.Parent:WaitForChild("AegisWalkerConfig"))
+local Titan = require(script.Parent:WaitForChild("CoreTitanConfig"))
 
 export type ShieldDefinition = { Capacity: number, ArcDegrees: number, RecoveryTime: number }
 
@@ -27,9 +28,16 @@ export type EnemyDefinition = {
 	KnockbackResistance: number?,
 	RootDensityMultiplier: number?,
 	DamageReduction: number?,
+	WeakPointMultiplier: number?,
 }
 
 local definitions: { [string]: EnemyDefinition } = {
+	CoreTitan = {
+		EnemyId = Titan.Id, AIType = "Boss", IsMechanical = true, IsBoss = true, FallbackTemplate = "Striker",
+		MaxHP = Titan.MaxHP, MoveSpeed = Titan.MoveSpeed, Scale = Titan.Scale, Damage = Titan.Gatling.Damage,
+		AttackRange = Titan.Gatling.Range, AttackCooldown = Titan.Recovery[1], DamageReduction = Titan.DamageReduction,
+		ExperienceReward = 0, ThreatCost = 0, WeakPointMultiplier = Titan.WeakPointMultiplier,
+	},
 	AegisWalker = {
 		EnemyId = Aegis.Id, AIType = "Boss", IsMechanical = true, IsBoss = true, FallbackTemplate = "Striker",
 		MaxHP = Aegis.MaxHP, MoveSpeed = Aegis.MoveSpeed, Scale = Aegis.Scale,
