@@ -8,6 +8,8 @@ local ProgressionService = require(script.Parent:WaitForChild("Services"):WaitFo
 local ExperienceOrbService = require(script.Parent:WaitForChild("Services"):WaitForChild("ExperienceOrbService"))
 local StageService = require(script.Parent:WaitForChild("Services"):WaitForChild("StageService"))
 local SpawnService = require(script.Parent:WaitForChild("Services"):WaitForChild("SpawnService"))
+local AegisWalkerService = require(script.Parent:WaitForChild("Services"):WaitForChild("AegisWalkerService"))
+local DashService = require(script.Parent:WaitForChild("Services"):WaitForChild("DashService"))
 local WeaponSelectionService = require(script.Parent:WaitForChild("Services"):WaitForChild("WeaponSelectionService"))
 local SpecialEquipmentService = require(script.Parent:WaitForChild("Services"):WaitForChild("SpecialEquipmentService"))
 local Grenade = require(script.Parent:WaitForChild("ServerModules"):WaitForChild("SpecialEquipment"):WaitForChild("Grenade"))
@@ -41,7 +43,9 @@ assert(SpecialEquipmentService.RegisterSpecial("Grenade", Grenade.Use), "Grenade
 assert(SpecialEquipmentService.RegisterSpecial("EnergyShield", EnergyShield.Use), "EnergyShield registration failed")
 assert(SpecialEquipmentService.RegisterSpecial("EMPPulse", EMPPulse.Use), "EMPPulse registration failed")
 assert(SpecialEquipmentService.RegisterSpecial("Turret", Turret.Use), "Turret registration failed")
+AegisWalkerService.Init()
 StageService.Init()
+DashService.Init()
 WeaponSelectionService.Init()
 SpawnService.Init()
 

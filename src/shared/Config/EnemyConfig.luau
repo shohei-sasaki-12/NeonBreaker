@@ -1,5 +1,7 @@
 --!strict
 
+local Aegis = require(script.Parent:WaitForChild("AegisWalkerConfig"))
+
 export type ShieldDefinition = { Capacity: number, ArcDegrees: number, RecoveryTime: number }
 
 export type EnemyDefinition = {
@@ -24,9 +26,16 @@ export type EnemyDefinition = {
 	Shield: ShieldDefinition?,
 	KnockbackResistance: number?,
 	RootDensityMultiplier: number?,
+	DamageReduction: number?,
 }
 
 local definitions: { [string]: EnemyDefinition } = {
+	AegisWalker = {
+		EnemyId = Aegis.Id, AIType = "Boss", IsMechanical = true, IsBoss = true, FallbackTemplate = "Striker",
+		MaxHP = Aegis.MaxHP, MoveSpeed = Aegis.MoveSpeed, Scale = Aegis.Scale,
+		Damage = Aegis.Gun.Damage, AttackRange = Aegis.Gun.Range, AttackCooldown = Aegis.AttackRecovery,
+		DamageReduction = Aegis.DamageReduction, ExperienceReward = Aegis.ExperienceReward, ThreatCost = 0,
+	},
 	Striker = {
 		EnemyId = "Striker",
 		MaxHP = 80,

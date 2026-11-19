@@ -26,6 +26,7 @@
         },
         "Combat": {
           "$className": "Folder",
+          "Dash": { "$className": "RemoteEvent" },
           "UseSpecial": { "$className": "RemoteEvent" },
           "WeaponShotResolved": { "$className": "RemoteEvent" },
           "FireWeapon": {

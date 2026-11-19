@@ -9,6 +9,7 @@ local SharedConfig = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Conf
 local StageConfig = require(SharedConfig:WaitForChild("StageConfig"))
 local EliteConfig = require(SharedConfig:WaitForChild("EliteConfig"))
 local EnemyConfig = require(SharedConfig:WaitForChild("EnemyConfig"))
+local AegisConfig = require(SharedConfig:WaitForChild("AegisWalkerConfig"))
 local EnemyService = require(script.Parent:WaitForChild("EnemyService"))
 local StageService = require(script.Parent:WaitForChild("StageService"))
 
@@ -109,7 +110,11 @@ local function Update()
 	if now < nextSpawnAt then return end
 	-- No catch-up burst after a slow frame, full capacity, or unsafe spawn points.
 	nextSpawnAt = now + phase.SpawnInterval
-	local slots = math.min(phase.WaveSize, Config.MaxEnemies - EnemyService.GetEnemyCount())
+	local reservingBoss = stage.MidBossState == "Pending" or stage.MidBossState == "Warning"
+	local bossEncounter = stage.MidBossState == "Warning" or stage.MidBossState == "Active"
+	local waveSize = if bossEncounter then math.max(1, math.floor(phase.WaveSize * AegisConfig.EncounterSpawnMultiplier)) else phase.WaveSize
+	local cap = Config.MaxEnemies - (if reservingBoss then 1 else 0)
+	local slots = math.min(waveSize, cap - EnemyService.GetEnemyCount())
 	if slots <= 0 or budget <= 0 then return end
 	local positions = GetPlayerPositions()
 	if #positions == 0 then return end

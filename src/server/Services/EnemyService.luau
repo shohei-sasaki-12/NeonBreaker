@@ -31,6 +31,7 @@ type EnemyRecord = {
 	AI: MeleeAI.Controller,
 	Armor: EnemyArmor.Controller?,
 	EliteAbility: string?,
+	OnBossDefeated: ((Model, Vector3) -> ())?,
 	Status: EnemyStatus.Controller,
 	Effects: StatusEffects.Controller,
 	Cryo: CryoStatus.Controller,
@@ -59,6 +60,10 @@ local heartbeat: RBXScriptConnection? = nil
 local started = false
 local nextUpdateAt = 0
 local EnemyService = {}
+type BossOptions = {
+	CreateAI: (Model) -> MeleeAI.Controller,
+	OnDefeated: (Model, Vector3) -> (),
+}
 type OrbSpawner = (position: Vector3, experience: number) -> Part?
 local spawnExperienceOrb: OrbSpawner? = nil
 
@@ -105,6 +110,7 @@ local function FinishDeath(model: Model, record: EnemyRecord, attacker: Player?)
 	if spawnOrb and record.ExperienceReward > 0 then
 		spawnOrb(deathPosition, record.ExperienceReward)
 	end
+	if record.OnBossDefeated then record.OnBossDefeated(model, deathPosition) end
 	return true
 end
 
@@ -125,7 +131,7 @@ function EnemyService.ApplyDamage(model: Model, amount: number, attacker: Player
 	local armor = record.Armor
 	local remaining = if armor then armor.Absorb(amount, origin) else amount
 	if remaining <= 0 then return true end
-	record.Health = math.max(0, record.Health - remaining)
+	record.Health = math.max(0, record.Health - remaining * (1 - (record.Config.DamageReduction or 0)))
 	if record.Health <= 0 then
 		FinishDeath(model, record, attacker)
 	else
@@ -242,7 +248,7 @@ function EnemyService.ApplyEMP(model: Model): boolean
 	return true
 end
 
-function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame, isElite: boolean?): Model?
+function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame, isElite: boolean?, bossOptions: BossOptions?): Model?
 	assert(started, "Call EnemyService.Init before spawning enemies")
 	local destination = container
 	local source = templates
@@ -268,7 +274,8 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame, isElite: 
 	if not template and config.FallbackTemplate then
 		template = source:FindFirstChild(config.FallbackTemplate)
 	end
-	if (not factory and config.AIType ~= "Support") or not template or not template:IsA("Model") then
+	local canBuildAI = factory ~= nil or config.AIType == "Support" or (config.IsBoss == true and bossOptions ~= nil)
+	if not canBuildAI or not template or not template:IsA("Model") then
 		warn("[EnemyService] Missing model or AI for " .. enemyId)
 		return nil
 	end
@@ -324,7 +331,10 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame, isElite: 
 	root:SetNetworkOwner(nil)
 	CollectionService:AddTag(model, "Enemy")
 	local ai: MeleeAI.Controller
-	if factory then
+	if config.IsBoss and bossOptions then
+		CollectionService:AddTag(model, "Boss")
+		ai = bossOptions.CreateAI(model)
+	elseif factory then
 		ai = factory(model, config, CombatService.ApplyEnemyDamage)
 	else
 		ai = SupportAI.new(model, config, EnemyService.GetEnemiesInRadius, EnemyService.Heal)
@@ -333,6 +343,7 @@ function EnemyService.SpawnEnemy(enemyId: string, spawnCFrame: CFrame, isElite: 
 		then EnemyArmor.new(model, root, config.Shield, ability == "EnergyShield") else nil
 	local record: EnemyRecord = {
 		AI = ai, Armor = armor, EliteAbility = ability,
+		OnBossDefeated = if config.IsBoss and bossOptions then bossOptions.OnDefeated else nil,
 		Humanoid = humanoid, Active = true, EnemyId = config.EnemyId, Config = config,
 		Status = EnemyStatus.new(model, humanoid, config), EMPShieldHandler = nil,
 		Cryo = CryoStatus.new(model, config),

@@ -7,11 +7,12 @@ local Attacks = require(script.Parent:WaitForChild("EnemyAttacks"))
 type Shot = {
 	Part: Part, Position: Vector3, Direction: Vector3, Speed: number, Remaining: number,
 	Damage: number, ApplyDamage: Attacks.DamagePlayer, Params: RaycastParams, LastUpdate: number,
+	Owner: Model?,
 }
 local shots: { [Part]: Shot } = {}
 local EnemyProjectiles = {}
 
-function EnemyProjectiles.Fire(origin: Vector3, direction: Vector3, speed: number, range: number, damage: number, applyDamage: Attacks.DamagePlayer)
+function EnemyProjectiles.Fire(origin: Vector3, direction: Vector3, speed: number, range: number, damage: number, applyDamage: Attacks.DamagePlayer, owner: Model?)
 	local container = Workspace:FindFirstChild("ProjectileContainer")
 	if not container or direction.Magnitude == 0 then return end
 	local part = Attacks.MakeVisual("EnemyProjectile", Color3.fromRGB(255, 120, 55), Vector3.one * 0.55)
@@ -21,9 +22,18 @@ function EnemyProjectiles.Fire(origin: Vector3, direction: Vector3, speed: numbe
 	params.RespectCanCollide = false -- Player hitboxes need only be queryable.
 	shots[part] = {
 		Part = part, Position = origin, Direction = direction.Unit, Speed = speed, Remaining = range,
-		Damage = damage, ApplyDamage = applyDamage, Params = params, LastUpdate = os.clock(),
+		Damage = damage, ApplyDamage = applyDamage, Params = params, LastUpdate = os.clock(), Owner = owner,
 	}
 	part.Parent = container
+end
+
+function EnemyProjectiles.ClearOwner(owner: Model)
+	for part, shot in shots do
+		if shot.Owner == owner then
+			shots[part] = nil
+			part:Destroy()
+		end
+	end
 end
 
 function EnemyProjectiles.Update(now: number)

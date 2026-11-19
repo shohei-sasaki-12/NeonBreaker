@@ -9,9 +9,11 @@ local PlayerStateService = require(script.Parent:WaitForChild("PlayerStateServic
 local DropPodEvent = require(script.Parent.Parent:WaitForChild("ServerModules"):WaitForChild("DropPodEvent"))
 
 export type StageState = "Waiting" | "Countdown" | "Running" | "Cleared" | "GameOver"
+export type MidBossState = "Pending" | "Warning" | "Active" | "Defeated" | "Unavailable"
 export type Snapshot = {
 	StageId: string, State: StageState, RemainingSeconds: number, EndsAt: number?,
 	ElapsedSeconds: number, PhaseId: Config.PhaseId?, DropPodState: DropPodEvent.State?, AlarmActive: boolean,
+	MidBossState: MidBossState?, BossHealth: number?, BossMaxHealth: number?,
 }
 type Participant = { Character: Model, Humanoid: Humanoid, Eliminated: boolean }
 
@@ -25,6 +27,9 @@ local phase: Config.Phase? = nil
 local podState: DropPodEvent.State? = nil
 local dropPod: DropPodEvent.Controller? = nil
 local midBossFired = false
+local midBossState: MidBossState? = nil
+local bossHealth: number? = nil
+local bossMaxHealth: number? = nil
 local started = false
 local lastRemaining = -1
 local stateRemote: RemoteEvent? = nil
@@ -45,7 +50,21 @@ function StageService.GetState(): Snapshot
 		PhaseId = if phase then phase.Id else nil,
 		DropPodState = podState,
 		AlarmActive = phase ~= nil and phase.Id == "FinalRush",
+		MidBossState = midBossState,
+		BossHealth = bossHealth, BossMaxHealth = bossMaxHealth,
 	})
+end
+
+function StageService.ReportMidBoss(nextState: MidBossState, health: number?, maximum: number?): boolean
+	assert(RunService:IsServer(), "Mid-boss state must be set on the server")
+	if state ~= "Running" or not midBossFired or midBossState == "Defeated" then return false end
+	if nextState == midBossState and health == bossHealth and maximum == bossMaxHealth then return false end
+	local stateChanged = nextState ~= midBossState
+	midBossState, bossHealth, bossMaxHealth = nextState, health, maximum
+	local snapshot = StageService.GetState()
+	if stateRemote then stateRemote:FireAllClients(snapshot) end
+	if stateChanged then changed:Fire(snapshot) end
+	return true
 end
 
 local function DisconnectDeaths()
@@ -59,6 +78,7 @@ local function Transition(nextState: StageState, deadline: number?)
 	endsAt = deadline
 	if nextState ~= "Running" then
 		runStartedAt, phase, podState = nil, nil, nil
+		midBossState, bossHealth, bossMaxHealth = nil, nil, nil
 		if dropPod then dropPod.Reset() end
 	end
 	local snapshot = StageService.GetState()
@@ -85,18 +105,30 @@ local function GetReadyPlayers(): { [Player]: Participant }?
 	return ready
 end
 
-local function HasLivingParticipant(): boolean
-	local alive = false
-	for player, record in participants do
-		-- Latch elimination: Roblox's automatic respawn cannot undo a run death.
-		if player.Parent ~= Players or player.Character ~= record.Character
-			or not record.Character.Parent or record.Humanoid.Parent ~= record.Character
-			or record.Humanoid.Health <= 0 then
-			record.Eliminated = true
-		end
-		if not record.Eliminated then alive = true end
+function StageService.IsLivingParticipant(player: Player): boolean
+	local record = participants[player]
+	if state ~= "Running" or not record or record.Eliminated then return false end
+	if player.Parent ~= Players or player.Character ~= record.Character
+		or not record.Character.Parent or record.Humanoid.Parent ~= record.Character
+		or record.Humanoid.Health <= 0 then
+		record.Eliminated = true
 	end
-	return alive
+	return not record.Eliminated
+end
+
+function StageService.GetLivingParticipants(): { Player }
+	local living: { Player } = {}
+	for player in participants do
+		if StageService.IsLivingParticipant(player) then table.insert(living, player) end
+	end
+	return living
+end
+
+local function HasLivingParticipant(): boolean
+	for player in participants do
+		if StageService.IsLivingParticipant(player) then return true end
+	end
+	return false
 end
 
 local function Update()
@@ -119,6 +151,7 @@ local function Update()
 			phase = Config.GetPhase(0)
 			podState = "Pending"
 			midBossFired = false
+			midBossState = "Pending"
 			Transition("Running", now + Config.RunningDuration)
 		end
 	elseif state == "Running" then
@@ -203,6 +236,7 @@ function StageService.Destroy()
 	if dropPod then dropPod.Reset() end
 	dropPod = nil
 	midBossFired = false
+	midBossState, bossHealth, bossMaxHealth = nil, nil, nil
 	lastRemaining = -1
 	PlayerStateService.SetWeaponSelectionLocked(false)
 end

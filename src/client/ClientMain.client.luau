@@ -11,6 +11,7 @@ local WeaponSelectionController = require(script.Parent:WaitForChild("Controller
 local SpecialEquipmentController = require(script.Parent:WaitForChild("Controllers"):WaitForChild("SpecialEquipmentController"))
 local SpecialEffectsController = require(script.Parent:WaitForChild("Controllers"):WaitForChild("SpecialEffectsController"))
 local StageAlertController = require(script.Parent:WaitForChild("Controllers"):WaitForChild("StageAlertController"))
+local DashController = require(script.Parent:WaitForChild("Controllers"):WaitForChild("DashController"))
 
 -- Subscribe consumers before enabling input notifications.
 CameraController.Init()
@@ -19,6 +20,7 @@ WeaponEffectsController.Init()
 WeaponController.Init()
 SpecialEquipmentController.Init()
 SpecialEffectsController.Init()
+DashController.Init()
 InputController.Init()
 LevelUpController.Init()
 StageAlertController.Init()
